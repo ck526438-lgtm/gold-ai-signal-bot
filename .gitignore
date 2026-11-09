@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.env
+config.yaml
+data/cache/
+data/models/
+data/logs/
+data/*.sqlite
+data/*.csv
+*.log

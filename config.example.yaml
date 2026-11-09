@@ -1,0 +1,101 @@
+# Copier ce fichier en config.yaml puis adapter.
+# Les valeurs ${ENV_VAR} sont remplacees par l'environnement (ou le .env).
+
+symbol:
+  # Broker "other": le nom reel du gold change d'un broker a l'autre.
+  # Le bot teste chaque nom dans l'ordre et prend le premier visible.
+  candidates: [XAUUSD, XAUUSDm, XAUUSD.a, XAUUSD.pro, GOLD, GOLDm, GOLD.a]
+  timeframe: M5
+
+market:
+  # Mesure sur les donnees reels du broker: aucune cote entre 21:00 et 23:00 UTC.
+  # Le VWAP et les filtres de session partent de la, sinon tout est decale.
+  daily_close_utc_hour: 21
+  daily_open_utc_hour: 23
+
+broker:
+  # Broker "other": ces trois valeurs dependent du courtier, pas du bot.
+  # Verifie-les dans Terminal > Details du symbole (Specification du contrat).
+  point: 0.01          # 1 point = 0.01 USD sur XAUUSD
+  contract_size: 100   # 1 lot = 100 onces -> 1 USD par point de mouvement
+  lot_min: 0.01
+  lot_step: 0.01
+  lot_max: 100
+
+data:
+  provider: auto          # auto | mt5 | csv | bridge
+  cache_dir: data/cache
+  history_days: 400       # profondeur telechargee par `fetch`
+  chunk_days: 7           # evite les requetes trop larges rejetees par le serveur
+  csv_path: data/manual/xauusd_m5.csv   # utilises si provider: csv
+  bridge:
+    url: http://127.0.0.1:8765
+    token: ${GOLDBOT_BRIDGE_TOKEN}
+
+mt5:
+  terminal_path: null     # null = decouverte automatique
+  login: null             # null = reutilise le terminal deja connecte
+  password: ${MT5_PASSWORD}
+  server: null
+  # Les dates MT5 sont en heure serveur, pas en UTC. null = mesure automatique
+  # au demarrage (valeur attendue ici: 2). Mettre 2 pour forcer.
+  broker_utc_offset_hours: null
+
+signal:
+  engine: both            # rules | ml | both  (both = les deux versions cote a cote)
+  min_score: 68           # score regles 0-100. 55 déclenchait 62% des bougies: bruit pur.
+  min_agreeing_components: 4   # au moins 4 des 6 familles dans le meme sens
+  require_directional_backbone: true  # trend OU volatility doit confirmer le sens
+  cooldown_bars: 6        # nb de bougies M5 avant un nouveau signal
+  session:
+    enabled: true
+    trade_hours_utc: [7, 20]   # evite le roulement asiatique a spread large
+    max_spread_points: 45
+  rules:
+    atr_period: 14
+    trend_ema: [20, 50, 200]
+    rsi_period: 14
+    weights:                  # somme normalisee automatiquement
+      trend: 25
+      momentum: 20
+      mean_reversion: 15
+      volatility: 15
+      price_action: 15
+      session: 10
+  ml:
+    model_dir: data/models
+    horizon_bars: 12          # 12 x M5 = 60 min, cible de prediction
+    prob_threshold: 0.58
+    min_pnl_atr: 0.5          # label 1 si move > 0.5 ATR dans l'horizon
+    retrain_days: 30
+
+risk:
+  sl_atr: 1.5
+  tp_atr: 2.5
+  trail_atr: 0.0              # 0 = desactive
+  paper_balance: 1000
+  risk_pct: 0.5               # % de la balance risque par trade (paper sizing)
+
+backtest:
+  spread_points: 33           # point = 0.01 sur XAUUSD -> 0.33 USD
+  slippage_points: 5          # par jambe, 2 jambes par trade
+  max_hold_bars: 72           # arret temporel: 72 bougies M5 = 6 h
+  exit_on_opposite_state: true
+  min_group_trades: 40        # seuil de lecture des decoupes session/heure
+  commission_per_lot: 0.0
+  fee_bps_on_notional: 0.0    # a remplir si ton broker facture autrement
+
+trading:
+  # Reste false tant que le bot n'a pas tourne en paper au moins 2 semaines.
+  auto_execute: false
+  order_comment: GOLDAI
+  volume: 0.01
+
+notify:
+  telegram:
+    enabled: false
+    bot_token: ${TELEGRAM_BOT_TOKEN}
+    chat_id: ${TELEGRAM_CHAT_ID}
+
+journal:
+  db_path: data/journal.sqlite
