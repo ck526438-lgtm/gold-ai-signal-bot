@@ -3,6 +3,9 @@ name: Installateur Windows
 on:
   push:
     tags: ["v*"]
+    # build de test (installateur téléchargeable dans l'onglet Actions, sans publication)
+    branches: [main, v2-analyse-pro]
+    paths-ignore: ["docs/**", "README.md"]
   workflow_dispatch:
     inputs:
       version:
