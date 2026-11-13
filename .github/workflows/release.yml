@@ -3,9 +3,10 @@ name: Installateur Windows
 on:
   push:
     tags: ["v*"]
-    # build de test (installateur téléchargeable dans l'onglet Actions, sans publication)
+    # main : publie automatiquement la version de analyzer/paths.py si elle n'a pas encore de Release
+    # autres branches : build de test (installateur dans l'onglet Actions, sans publication)
     branches: [main, v2-analyse-pro]
-    paths-ignore: ["docs/**", "README.md"]
+    paths-ignore: ["README.md"]
   workflow_dispatch:
     inputs:
       version:
@@ -17,7 +18,28 @@ permissions:
   contents: write
 
 jobs:
+  version:
+    name: Version à publier
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      publish: ${{ steps.v.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CODE=$(python3 -c "import re;print(re.search(r'VERSION = \"([^\"]+)\"', open('analyzer/paths.py').read()).group(1))")
+          if [ "${{ github.ref_type }}" = "tag" ]; then V="${{ github.ref_name }}"; V="${V#v}"; P=true
+          elif [ -n "${{ inputs.version }}" ]; then V="${{ inputs.version }}"; P=true
+          elif [ "${{ github.ref }}" = "refs/heads/main" ] && ! gh release view "v$CODE" -R "${{ github.repository }}" >/dev/null 2>&1; then V="$CODE"; P=true
+          else V="$CODE"; P=false; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"; echo "publish=$P" >> "$GITHUB_OUTPUT"
+          echo "Version $V — publication : $P"
+
   build:
+    needs: version
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +68,7 @@ jobs:
       - name: Installateur (Inno Setup)
         shell: pwsh
         run: |
-          $version = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}".TrimStart("v") } elseif ("${{ inputs.version }}") { "${{ inputs.version }}" } else { "2.0.0" }
+          $version = "${{ needs.version.outputs.version }}"
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
           & $iscc "/DMyAppVersion=$version" packaging\installer.iss
@@ -65,12 +87,12 @@ jobs:
             dist/Gold-AI-Signal-Bot-portable.zip
 
       - name: Publication de la version
-        if: github.ref_type == 'tag' || inputs.version != ''
+        if: needs.version.outputs.publish == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version) }}
+          tag_name: v${{ needs.version.outputs.version }}
           target_commitish: ${{ github.sha }}
-          name: Gold AI Signal Bot ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version) }}
+          name: Gold AI Signal Bot v${{ needs.version.outputs.version }}
           files: |
             dist/Gold-AI-Signal-Bot-Setup-*.exe
             dist/Gold-AI-Signal-Bot-portable.zip
@@ -101,14 +123,13 @@ jobs:
 
   linux:
     name: Paquet Linux (Kali, Debian, Ubuntu)
-    needs: build
+    needs: [version, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Archive
         run: |
-          V="${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version || '2.0.0') }}"
-          V="${V#v}"
+          V="${{ needs.version.outputs.version }}"
           git archive --format=tar.gz --prefix="gold-ai-signal-bot-$V/" -o "gold-ai-signal-bot-linux-$V.tar.gz" HEAD
           echo "FILE=gold-ai-signal-bot-linux-$V.tar.gz" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v4
@@ -116,10 +137,10 @@ jobs:
           name: Gold-AI-Signal-Bot-Linux
           path: ${{ env.FILE }}
       - name: Ajout à la version
-        if: github.ref_type == 'tag' || inputs.version != ''
+        if: needs.version.outputs.publish == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version) }}
+          tag_name: v${{ needs.version.outputs.version }}
           files: ${{ env.FILE }}
 
   ea:
@@ -128,8 +149,8 @@ jobs:
 
   ea-release:
     name: Ajout de l'EA à la version
-    needs: [build, ea]
-    if: github.ref_type == 'tag' || inputs.version != ''
+    needs: [version, build, ea]
+    if: needs.version.outputs.publish == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -138,7 +159,7 @@ jobs:
           path: ea
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version) }}
+          tag_name: v${{ needs.version.outputs.version }}
           files: |
             ea/Gold_AI_Signal_Bot_EA.ex5
             ea/Gold_AI_Signal_Bot_EA.mq5
