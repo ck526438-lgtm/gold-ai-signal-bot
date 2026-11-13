@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Guide — Gold AI Signal Bot</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm; }
+  * { box-sizing: border-box; }
+  body { font: 10.5pt/1.5 "Inter", "Segoe UI", Arial, sans-serif; color: #1d232c; margin: 0; }
+  h1 { font-size: 30pt; margin: 0 0 6px; letter-spacing: -.01em; }
+  h1 span { color: #c48f22; }
+  h2 { font-size: 15pt; margin: 22px 0 8px; padding-bottom: 4px; border-bottom: 2px solid #e3ad3f; page-break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 14px 0 4px; page-break-after: avoid; }
+  p, li { margin: 4px 0; }
+  .cover { height: 250mm; display: flex; flex-direction: column; justify-content: center; page-break-after: always; }
+  .cover .sub { font-size: 14pt; color: #5a6472; margin-bottom: 26px; }
+  .cover img { width: 100%; border-radius: 8px; border: 1px solid #d8dde4; }
+  .cover .v { margin-top: 18px; color: #5a6472; }
+  figure { margin: 10px 0; page-break-inside: avoid; }
+  figure img { width: 100%; border-radius: 6px; border: 1px solid #d8dde4; }
+  figcaption { font-size: 9pt; color: #5a6472; margin-top: 3px; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 9.5pt; page-break-inside: avoid; }
+  th, td { text-align: left; padding: 5px 7px; border-bottom: 1px solid #e3e7ec; vertical-align: top; }
+  th { background: #f6f1e4; }
+  code { font: 9.5pt "JetBrains Mono", Consolas, monospace; background: #f2f4f7; padding: 1px 4px; border-radius: 3px; }
+  .box { border-left: 4px solid #e3ad3f; background: #fbf6ea; padding: 8px 12px; margin: 10px 0; page-break-inside: avoid; }
+  .warn { border-color: #e0525f; background: #fdf0f1; }
+  .t { display: block; font-weight: 700; margin-bottom: 2px; }
+  ol.steps li { margin: 6px 0; }
+  .page { page-break-before: always; }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <h1>Gold AI <span>Signal Bot</span></h1>
+  <div class="sub">Analyse et robot de trading de l'or (XAUUSD) en M5 — guide d'utilisation</div>
+  <img src="../analyse.png" alt="">
+  <div class="v">Version 2.0 · Windows, Linux · MetaTrader 5</div>
+</section>
+
+<h2>1. À quoi sert l'application</h2>
+<p>Gold AI Signal Bot surveille l'or (XAUUSD) en unité de temps 5 minutes. À chaque clôture de bougie,
+il cherche une figure de chandelier japonais, vérifie si le contexte la confirme (tendances M15 / H1 / H4,
+moyennes mobiles, zones de support et de résistance, RSI, ADX, session) et donne une note sur 10, avec le
+détail de chaque critère. Si la note est suffisante, il propose une entrée, un stop et deux objectifs.</p>
+<p>Il peut aussi placer et gérer les trades lui-même sur MetaTrader 5 (robot, désactivé par défaut).</p>
+<div class="box warn"><span class="t">Ce que l'application ne fait pas</span>Elle ne prédit pas le marché.
+Sur l'or en M5, le spread (environ 0,33 $ par once) mange une grande partie du mouvement : un signal
+n'est intéressant que si la figure a été rentable sur <b>ton</b> historique. Le robot le vérifie avant chaque
+ordre, mais commence toujours en Simulateur, puis sur compte démo.</div>
+
+<h2>2. L'or en chiffres</h2>
+<table>
+  <tr><th>Notion</th><th>Valeur sur XAUUSD</th></tr>
+  <tr><td>1 point</td><td>0,01 $ (dernier chiffre du prix chez la plupart des courtiers)</td></tr>
+  <tr><td>1 pip (utilisé partout dans l'application)</td><td>0,10 $ = 10 points</td></tr>
+  <tr><td>1 lot</td><td>100 onces : 1 pip vaut 10 $ pour 1 lot, 1 $ pour 0,10 lot, 0,10 $ pour 0,01 lot</td></tr>
+  <tr><td>Volatilité M5 habituelle (ATR)</td><td>30 à 60 pips (3 à 6 $) pendant Londres / New York</td></tr>
+  <tr><td>Stop accepté</td><td>25 à 150 pips (2,50 $ à 15 $)</td></tr>
+  <tr><td>Spread simulé / maximum</td><td>3,3 pips / 6 pips</td></tr>
+  <tr><td>Sessions tradées</td><td>7 h–11 h et 12 h–20 h UTC (= heure d'Abidjan)</td></tr>
+  <tr><td>Annonces surveillées</td><td>USD à fort impact (NFP, CPI, Fed, PIB…), ±30 min</td></tr>
+</table>
+<p>Exemple : compte de 1 000 $, risque 0,5 % = 5 $. Avec un stop de 50 pips (5 $ par once), le lot est
+5 $ ÷ (50 × 10 $) = 0,01 lot. Le calcul exact est demandé à MetaTrader 5 et arrondi vers le bas.</p>
+
+<h2>3. Installation sous Windows</h2>
+<ol class="steps">
+  <li><b>Télécharger</b> <code>Gold-AI-Signal-Bot-Setup-x.y.z.exe</code> sur la page Releases du dépôt GitHub.</li>
+  <li><b>Installer</b> : si SmartScreen s'affiche, <i>Informations complémentaires</i> → <i>Exécuter quand même</i>.
+      Coche le raccourci Bureau et, si tu veux, le lancement au démarrage.</li>
+  <li><b>Préparer MetaTrader 5</b> : connecte-toi, affiche l'or dans <i>Observation du marché</i>
+      (clic droit → <i>Tout afficher</i> s'il n'y est pas) et active le bouton <b>Algo Trading</b> pour le robot.</li>
+  <li><b>Lancer</b> Gold AI Signal Bot : l'interface s'ouvre dans le navigateur sur <code>http://localhost:8010</code>,
+      la fenêtre noire affiche les notifications. Ne la ferme pas pendant que tu trades.</li>
+  <li><b>Suivre l'assistant</b> : il détecte MetaTrader 5, le compte, le nom de l'or chez ton courtier
+      (<code>XAUUSD</code>, <code>XAUUSDm</code>, <code>XAUUSD.pro</code>, <code>GOLD</code>…) et le décalage horaire.</li>
+</ol>
+<p>Les réglages, le journal et l'historique du robot sont dans <code>%LOCALAPPDATA%\Gold AI Signal Bot</code>.
+L'application peut tourner en même temps qu'EURUSD M5 Analyzer (port, dossier et numéro magic différents).</p>
+<div class="box"><span class="t">Sans MetaTrader 5</span>L'application peut prendre les prix sur Yahoo Finance :
+c'est le contrat à terme COMEX <code>GC=F</code>, qui suit l'or au comptant à quelques dollars près. Parfait pour
+apprendre à lire l'analyse, pas pour placer des ordres à ces niveaux.</div>
+
+<h2>4. L'écran Analyse</h2>
+<figure><img src="../analyse.png" alt=""><figcaption>Mode démo : marché simulé, les prix ne sont pas réels.</figcaption></figure>
+<ul>
+  <li><b>Bandeau du prix</b> : dernier prix, variation sur 24 h en pips, plus haut / plus bas, ATR M5.</li>
+  <li><b>Graphique</b> : bougies M5, EMA 20 / 50 / 200, zones S/R en pointillés, flèches des signaux passés
+      (clique dessus pour le détail), niveaux du signal en cours. RSI en dessous.</li>
+  <li><b>Radar</b> : la dernière bougie clôturée est notée sur 10, critère par critère. Sans signal, il dit pourquoi
+      (score trop bas, zone opposée trop proche, stop trop large, hors session…). Le bouton
+      <b>Placer ce trade</b> envoie l'ordre après un récapitulatif, même si le robot est arrêté.</li>
+  <li><b>Contexte du marché</b> : tendances H1 et M5, RSI, ADX, volatilité, session en cours.</li>
+</ul>
+
+<h3>Comment se calcule la note</h3>
+<table>
+  <tr><th>Critère</th><th>Points</th></tr>
+  <tr><td>Force de la figure (+1 si plusieurs figures concordent)</td><td>1 à 3</td></tr>
+  <tr><td>Sens de la tendance H1</td><td>+2 (−2 si contre)</td></tr>
+  <tr><td>EMA 20/50 alignées · bon côté de l'EMA 200</td><td>+1 · +0,5</td></tr>
+  <tr><td>Rejet d'une zone S/R (forte si ≥ 2 touches) ou rebond sur les EMA</td><td>+1 à +2</td></tr>
+  <tr><td>RSI qui confirme sans excès</td><td>+1 (−1 si excès)</td></tr>
+  <tr><td>ADX ≥ 18 (marché directionnel)</td><td>+1 (−1 sinon)</td></tr>
+  <tr><td>Session Londres / New York</td><td>+0,5</td></tr>
+</table>
+<p>Qualité : <b>A+</b> ≥ 8 · <b>A</b> ≥ 7 · <b>B</b> ≥ 6. Stop derrière la mèche + 0,25 ATR, TP1 = 1,5 R,
+TP2 = 2,5 R ramené avant la zone opposée ; setup refusé si une zone bloque à moins de 1,2 R.</p>
+
+<h2 class="page">5. Signaux et backtest</h2>
+<figure><img src="../signaux.png" alt=""><figcaption>Journal : chaque signal est suivi jusqu'au stop, à TP1 / TP2 ou à la sortie au temps.</figcaption></figure>
+<figure><img src="../backtest.png" alt=""><figcaption>Backtest en mode démo — ces chiffres ne représentent pas le vrai marché de l'or.</figcaption></figure>
+<p>Lance le backtest sur <b>50 000 bougies MetaTrader 5</b> (environ 6 mois). Regarde surtout l'espérance par trade
+(au-dessus de +0,05 R après spread), le profit factor (au-dessus de 1,1), le drawdown et les résultats
+<b>par figure</b> et <b>par heure</b> : désactive dans Réglages les figures qui perdent.</p>
+
+<h2 class="page">6. Le robot</h2>
+<figure><img src="../robot.png" alt=""><figcaption>« Pourquoi le robot ne trade pas » liste les raisons et comment les corriger.</figcaption></figure>
+<p>À chaque signal validé (score ≥ 7 par défaut), le robot calcule le lot selon le risque, ouvre deux positions
+(TP1 et TP2), met le stop de la deuxième au prix d'entrée après TP1, suit les gains avec un stop suiveur,
+coupe au retournement et ferme ce qui reste après 4 h.</p>
+<h3>Contrôle qualité avant chaque ordre</h3>
+<ul>
+  <li><b>Statistiques</b> : la figure doit être rentable sur ton historique (≥ 20 trades, espérance ≥ +0,05 R, PF ≥ 1,1), recalculé chaque jour ;</li>
+  <li><b>Tendances M15 / H1 / H4</b> : aucune contre le trade, au moins deux dans son sens ;</li>
+  <li><b>Annonces USD</b> : pas d'ordre à ±30 min ;</li>
+  <li><b>Volatilité</b> : ATR M5 entre 10 et 120 pips ;</li>
+  <li><b>IA</b> : probabilité de gain estimée par un modèle entraîné sur ton historique ; elle ne bloque que si elle a fait mieux que la stratégie seule sur une période jamais vue.</li>
+</ul>
+<h3>Sécurités</h3>
+<p>Désactivé au lancement · démo uniquement sauf autorisation · pause après −2 % dans la journée · 4 trades par jour
+et 1 ouvert à la fois · spread et écart de prix maximums · lot plafonné · arrêt d'urgence qui ne ferme que ses
+positions (numéro magic 730526) · mode Simulateur sans argent.</p>
+<h3>Profils</h3>
+<p><b>Débutant</b> (0,25 %, 3 trades/jour), <b>Équilibré</b> (défaut), <b>Actif</b> (scores faibles à risque réduit),
+<b>Tous les signaux</b> (dès le score 4, sans filtres statistiques ni IA ; annonces, spread et perte du jour restent actifs).</p>
+
+<h2>7. Robot autonome dans MetaTrader 5 (EA)</h2>
+<p>Le fichier <code>Gold_AI_Signal_Bot_EA.ex5</code> (dans la Release) applique la même analyse et la même gestion
+directement dans MetaTrader 5, sans Python : sur ton PC ou un VPS MetaTrader 24 h/24.</p>
+<ol class="steps">
+  <li>MT5 → <i>Fichier → Ouvrir le dossier des données</i> → <code>MQL5\Experts</code> : copie le fichier <code>.ex5</code>.</li>
+  <li>Dans le Navigateur, clic droit → <i>Actualiser</i>, puis glisse l'EA sur un graphique <b>XAUUSD M5</b>.</li>
+  <li>Onglet <i>Dépendances</i> : coche « Autoriser le trading algorithmique ». Active Algo Trading.</li>
+</ol>
+<p>Avec <code>InpAutoTrade = false</code>, l'EA affiche des boutons PLACER / IGNORER et notifie le téléphone.</p>
+
+<h2>8. Routine conseillée</h2>
+<ol class="steps">
+  <li>Semaine 1 : analyse seule. Lis le radar, compare avec ton propre jugement, note tes avis dans le journal.</li>
+  <li>Backtest 50 000 bougies MT5 ; désactive les figures et ajuste les sessions qui perdent.</li>
+  <li>Semaines 2 à 3 : robot en <b>Simulateur</b>, profil Débutant.</li>
+  <li>Puis compte <b>démo</b> MetaTrader 5 au moins un mois. Passe au réel seulement si les résultats tiennent.</li>
+  <li>Évite les 30 minutes autour du NFP, du CPI et de la Fed, même en manuel.</li>
+</ol>
+
+<h2>9. Dépannage</h2>
+<table>
+  <tr><th>Problème</th><th>Solution</th></tr>
+  <tr><td>« Aucune donnée MT5 pour XAUUSD »</td><td>Le nom ne correspond pas à ton courtier. Recopie-le depuis Observation du marché dans Réglages → Données (ex. <code>XAUUSDm</code>, <code>GOLD</code>).</td></tr>
+  <tr><td>Heures des bougies décalées</td><td>Règle le décalage horaire du serveur (souvent 2 en hiver, 3 en été) ou relance l'assistant pendant que le marché est ouvert.</td></tr>
+  <tr><td>Le robot ne trade pas</td><td>Lis l'encadré « Pourquoi le robot ne trade pas » de l'onglet Robot ; utilise « Tester un ordre » sur un compte démo.</td></tr>
+  <tr><td>« spread trop élevé »</td><td>Normal à l'ouverture asiatique et autour des annonces. Ne monte pas le maximum au-delà de 8–10 pips.</td></tr>
+  <tr><td>La page ne s'ouvre pas</td><td>Ouvre <code>http://localhost:8010</code> à la main ; vérifie que la fenêtre noire est ouverte.</td></tr>
+  <tr><td>Tout vérifier</td><td>Réglages → État du système : chaque point indique quoi corriger.</td></tr>
+</table>
+</body>
+</html>

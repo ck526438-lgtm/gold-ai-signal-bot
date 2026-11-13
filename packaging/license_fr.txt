@@ -1,0 +1,33 @@
+﻿Gold AI Signal Bot — conditions d'utilisation
+
+Ce logiciel est un outil personnel d'aide à la décision et d'automatisation pour le
+trading de l'or (XAUUSD) sur MetaTrader 5.
+
+AVERTISSEMENT SUR LES RISQUES
+Le trading sur le marché des changes (Forex) et sur les CFD comporte un risque élevé de
+perte, pouvant aller jusqu'à la totalité du capital investi. Les performances passées,
+y compris celles obtenues en backtest ou en simulation, ne préjugent pas des résultats
+futurs. Aucun signal, aucun réglage et aucune fonction de ce logiciel ne garantit un gain.
+
+UTILISATION DU ROBOT DE TRADING
+- Le robot est désactivé par défaut. Il ne passe des ordres que lorsque l'utilisateur
+  l'active lui-même dans l'onglet Robot.
+- Par défaut, il refuse de trader sur un compte réel. L'autorisation d'un compte réel
+  demande une confirmation explicite, puis une nouvelle confirmation à chaque activation.
+- L'utilisateur reste seul responsable des ordres passés sur son compte, du choix de son
+  courtier, des réglages de risque et de la surveillance de son compte.
+- Il est fortement recommandé de tester le robot en mode Simulateur puis sur un compte
+  démo pendant plusieurs semaines avant toute utilisation avec de l'argent réel.
+- Une coupure d'Internet, de l'ordinateur ou de MetaTrader 5 peut empêcher la gestion
+  des positions (break-even, clôture). Les stops et objectifs restent enregistrés chez
+  le courtier.
+
+DONNÉES
+Les réglages, le journal des signaux et l'historique des ordres sont stockés uniquement
+sur cet ordinateur (dossier %LOCALAPPDATA%\Gold AI Signal Bot). Les identifiants
+MetaTrader 5 éventuellement saisis dans le fichier .env ne quittent pas l'ordinateur.
+
+Le logiciel est fourni « tel quel », sans garantie d'aucune sorte.
+
+Composants tiers : TradingView Lightweight Charts (licence Apache 2.0), FastAPI, Uvicorn,
+pandas, NumPy (licences open source respectives).

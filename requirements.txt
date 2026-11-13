@@ -1,9 +1,10 @@
-# GOLD AI SIGNAL BOT - M5 XAUUSD
-# Windows: pip install -r requirements.txt   (MT5 natif)
-# Kali:    retirer MetaTrader5 (paquet Windows-only) et utiliser le bridge HTTP.
-MetaTrader5>=5.0.45   # Windows uniquement
-numpy>=1.26
+fastapi>=0.110
+uvicorn>=0.29
 pandas>=2.0
-scikit-learn>=1.4
-PyYAML>=6.0
-requests>=2.31
+numpy>=1.24
+pyyaml>=6.0
+yfinance>=0.2.40
+scikit-learn>=1.3     # modèle IA de probabilité de gain
+# Optionnels :
+# MetaTrader5>=5.0.45   # Windows uniquement — prix temps réel de ton courtier (recommandé)
+# plyer>=2.1            # notifications Windows

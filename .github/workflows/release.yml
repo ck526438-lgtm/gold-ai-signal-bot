@@ -1,0 +1,141 @@
+name: Installateur Windows
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version à publier (ex. 3.0.0) — vide = build de test sans publication"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt MetaTrader5 plyer pyinstaller
+
+      - name: Tests (Windows)
+        run: python -m pytest -q
+
+      - name: Exécutable (PyInstaller)
+        run: pyinstaller packaging/gold_ai.spec --noconfirm --distpath dist --workpath build
+
+      - name: Vérification de l'exécutable
+        env:
+          GOLD_AI_HOME: ${{ runner.temp }}\m5home
+        run: dist\Gold-AI-Signal-Bot\Gold-AI-Signal-Bot.exe selftest
+
+      - name: Installateur (Inno Setup)
+        shell: pwsh
+        run: |
+          $version = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}".TrimStart("v") } elseif ("${{ inputs.version }}") { "${{ inputs.version }}" } else { "2.0.0" }
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc "/DMyAppVersion=$version" packaging\installer.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem dist\*.exe
+
+      - name: Archive portable
+        shell: pwsh
+        run: Compress-Archive -Path dist\Gold-AI-Signal-Bot\* -DestinationPath dist\Gold-AI-Signal-Bot-portable.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Gold-AI-Signal-Bot-Windows
+          path: |
+            dist/Gold-AI-Signal-Bot-Setup-*.exe
+            dist/Gold-AI-Signal-Bot-portable.zip
+
+      - name: Publication de la version
+        if: github.ref_type == 'tag' || inputs.version != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version) }}
+          target_commitish: ${{ github.sha }}
+          name: Gold AI Signal Bot ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version) }}
+          files: |
+            dist/Gold-AI-Signal-Bot-Setup-*.exe
+            dist/Gold-AI-Signal-Bot-portable.zip
+            docs/Guide_Gold_AI_Signal_Bot.pdf
+          body: |
+            ## Installation
+            1. Télécharge **Gold-AI-Signal-Bot-Setup-….exe** ci-dessous et lance-le (SmartScreen : *Informations complémentaires* → *Exécuter quand même*).
+            2. Ouvre MetaTrader 5, connecte-toi, active le bouton **Algo Trading**.
+            3. Lance **Gold AI Signal Bot** depuis le menu Démarrer ou le Bureau : un assistant détecte MetaTrader 5, le symbole et l'heure du courtier.
+
+            ## Kali Linux / Debian / Ubuntu
+            ```bash
+            tar xzf gold-ai-signal-bot-linux-*.tar.gz && cd gold-ai-signal-bot-*/
+            ./install.sh              # analyse (Yahoo Finance, GC=F) + robot en Simulateur
+            ./install.sh --with-mt5   # + MetaTrader 5 sous Wine pour le robot réel
+            ```
+
+            Le robot de trading est **désactivé par défaut** et refuse les comptes réels tant que tu ne l'autorises pas.
+            Guide complet : `Guide_Gold_AI_Signal_Bot.pdf`.
+
+            ### Nouveautés 2.0 — analyse pro de l'or
+            - Nouveau moteur (repris de EURUSD M5 Analyzer, réglé pour l'or) : 12 figures de chandeliers, score de confluence /10 expliqué, zones S/R, tendances M15/H1/H4
+            - Contrôle qualité avant ordre : figure rentable sur ton historique, tendances alignées, annonces USD, volatilité, filtre IA validé hors échantillon
+            - Application Windows (installateur + portable), assistant qui détecte XAUUSD / GOLD chez le courtier, journal, backtest graphique
+            - Robot MT5 (démo par défaut) et EA autonome Gold_AI_Signal_Bot_EA
+            - Réglages or : 1 pip = 0,10 $, stop 25–150 pips, spread 3,3 pips, sessions 7–11 h et 12–20 h UTC
+            - L'ancienne version (règles + ML en ligne de commande) reste sous le tag v1-regles-ml
+
+  linux:
+    name: Paquet Linux (Kali, Debian, Ubuntu)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive
+        run: |
+          V="${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version || '2.0.0') }}"
+          V="${V#v}"
+          git archive --format=tar.gz --prefix="gold-ai-signal-bot-$V/" -o "gold-ai-signal-bot-linux-$V.tar.gz" HEAD
+          echo "FILE=gold-ai-signal-bot-linux-$V.tar.gz" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Gold-AI-Signal-Bot-Linux
+          path: ${{ env.FILE }}
+      - name: Ajout à la version
+        if: github.ref_type == 'tag' || inputs.version != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version) }}
+          files: ${{ env.FILE }}
+
+  ea:
+    name: Robot MT5 autonome (EA)
+    uses: ./.github/workflows/ea.yml
+
+  ea-release:
+    name: Ajout de l'EA à la version
+    needs: [build, ea]
+    if: github.ref_type == 'tag' || inputs.version != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ea
+          path: ea
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version) }}
+          files: |
+            ea/Gold_AI_Signal_Bot_EA.ex5
+            ea/Gold_AI_Signal_Bot_EA.mq5

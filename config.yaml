@@ -1,0 +1,53 @@
+# Gold AI Signal Bot — configuration (modifiable aussi dans l'onglet Réglages)
+# Sur l'or, 1 pip = 0,10 $ (10 points de 0,01). Un stop de 50 pips = 5 $ par once.
+symbol: XAUUSD          # nom exact chez ton courtier MT5 (ex. XAUUSDm, XAUUSD.pro, GOLD)
+source: auto            # auto (MT5 puis Yahoo) | mt5 | yfinance | csv | demo
+csv_path: ''
+bars: 1500              # bougies M5 chargées à chaque analyse (~5 jours)
+broker_utc_offset: 0    # heure serveur MT5 - UTC (souvent 2 en hiver, 3 en été) — l'assistant le mesure
+desktop_notifications: false   # notification Windows (pip install plyer)
+strategy:
+  min_score: 6.0        # 6 = plus de signaux, 7-8 = seulement les meilleurs
+  ema_fast: 20
+  ema_mid: 50
+  ema_slow: 200
+  rsi_period: 14
+  atr_period: 14
+  adx_period: 14
+  adx_min: 18.0
+  swing_lookback: 300
+  zone_atr_mult: 0.6
+  sl_atr_buffer: 0.25
+  min_sl_pips: 25.0     # 2,50 $
+  max_sl_pips: 150.0    # 15 $
+  rr_tp1: 1.5
+  rr_tp2: 2.5
+  min_room_r: 1.2
+  cooldown_bars: 6
+  use_sessions: true
+  sessions_utc:         # heures UTC (= heure d'Abidjan) : Londres, puis New York
+  - [7, 11]
+  - [12, 20]
+  spread_pips: 3.3      # 0,33 $ : spread mesuré sur XAUUSD (ForexClub démo)
+  max_hold_bars: 48
+  disabled_patterns: []
+trading:                # robot (onglet Robot) — DÉSACTIVÉ au lancement par défaut
+  mode: mt5             # mt5 | paper (simulateur, sans argent)
+  start_enabled: false  # activer le robot automatiquement au lancement
+  allow_live: false     # false = refuse les comptes réels (démo uniquement)
+  risk_percent: 0.5     # % du solde risqué par trade
+  min_score: 7.0        # score minimum pour qu'un signal soit tradé
+  max_open_trades: 1
+  max_trades_per_day: 4
+  daily_loss_limit_percent: 2.0
+  max_spread_pips: 6.0  # 0,60 $
+  max_slippage_pips: 8.0
+  min_atr_pips: 10.0    # volatilité ATR M5 acceptée (1 $ à 12 $)
+  max_atr_pips: 120.0
+  max_lots: 1.0
+  split_targets: true   # 2 positions : TP1 et TP2
+  breakeven: true       # stop au prix d'entrée quand TP1 est atteint
+  close_after_max_hold: true
+  magic: 730526
+  deviation_points: 30
+  paper_balance: 10000.0

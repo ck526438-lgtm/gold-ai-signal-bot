@@ -1,0 +1,76 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+
+  install-kali:
+    name: Installation sur Kali Linux
+    runs-on: ubuntu-latest
+    container: kalilinux/kali-rolling
+    steps:
+      - name: Outils de base
+        run: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 ca-certificates git shellcheck >/dev/null
+      - uses: actions/checkout@v4
+      - run: shellcheck -S warning install.sh scripts/setup-mt5-wine.sh
+      - name: install.sh
+        run: ./install.sh -y
+      - name: Lancement réel puis API
+        run: |
+          ~/.local/bin/gold-ai --demo --no-browser --port 8765 &
+          for i in $(seq 1 60); do python3 -c "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8765/api/state')" 2>/dev/null && break; sleep 1; done
+          python3 -c "import json,urllib.request;d=json.load(urllib.request.urlopen('http://127.0.0.1:8765/api/state'));assert d['ready'],d;print('OK', d['source_label'], d['price'])"
+          test -f ~/.local/share/applications/gold-ai-signal-bot.desktop
+      - name: Désinstallation
+        run: ./install.sh --purge && test ! -e ~/.local/share/gold-ai-signal-bot
+
+  wine-bridge:
+    name: Pont MetaTrader 5 sous Wine
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wine + affichage virtuel
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends wine64 xvfb >/dev/null
+      - name: install.sh --with-mt5 (sans le terminal MT5, qui nécessite un compte)
+        timeout-minutes: 30
+        env:
+          SKIP_MT5_TERMINAL: "1"
+          MT5_SETUP_VERBOSE: "1"
+        run: xvfb-run -a ./install.sh -y --with-mt5
+      - name: Pont sous Wine ↔ application Linux
+        run: |
+          xvfb-run -a ~/.local/bin/gold-ai-mt5 > bridge.log 2>&1 &
+          VENV=~/.local/share/gold-ai-signal-bot/venv/bin/python
+          set -a; . ~/.local/share/gold-ai-signal-bot/mt5-bridge.env; set +a
+          for i in $(seq 1 90); do (exec 3<>/dev/tcp/127.0.0.1/$MT5_BRIDGE_PORT) 2>/dev/null && break; sleep 2; done
+          cd ~/.local/share/gold-ai-signal-bot/app
+          $VENV -c "
+          from analyzer.mt5bridge import BridgeMT5
+          import os
+          m = BridgeMT5('127.0.0.1:' + os.environ['MT5_BRIDGE_PORT'])
+          assert m.ping(), 'ping'
+          assert m.TIMEFRAME_M5 == 5 and m.ORDER_TYPE_SELL == 1, 'constantes'
+          print('version MetaTrader5 :', m.version())
+          print('initialize sans terminal :', m.initialize(), m.last_error())
+          print('OK : pont Wine opérationnel')
+          " || { cat "$GITHUB_WORKSPACE/bridge.log"; cat ~/.local/share/gold-ai-signal-bot/data/logs/mt5-bridge-server.log; exit 1; }

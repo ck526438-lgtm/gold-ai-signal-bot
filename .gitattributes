@@ -1,0 +1,7 @@
+*.bat text eol=crlf
+*.iss text eol=crlf
+packaging/license_fr.txt text eol=crlf
+*.png binary
+*.ico binary
+*.jpg binary
+*.pdf binary

@@ -1,0 +1,61 @@
+name: Robot MT5 (EA)
+
+on:
+  push:
+    paths: ["mql5/**", ".github/workflows/ea.yml"]
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  compile:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer MetaTrader 5 (MetaEditor)
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          Invoke-WebRequest "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" -OutFile mt5setup.exe
+          Start-Process .\mt5setup.exe -ArgumentList "/auto"
+          $me = "C:\Program Files\MetaTrader 5\metaeditor64.exe"
+          for ($i = 0; $i -lt 120 -and -not (Test-Path $me); $i++) { Start-Sleep 5 }
+          if (-not (Test-Path $me)) { throw "MetaEditor introuvable après l'installation" }
+          Start-Sleep 20
+          Get-Process terminal64, mt5setup -ErrorAction SilentlyContinue | Stop-Process -Force
+          # mode portable : le terminal crée le dossier MQL5 (bibliothèque standard) à côté de lui
+          $term = "C:\Program Files\MetaTrader 5\terminal64.exe"
+          Start-Process $term -ArgumentList "/portable"
+          $lib = "C:\Program Files\MetaTrader 5\MQL5\Include\Trade\Trade.mqh"
+          for ($i = 0; $i -lt 90 -and -not (Test-Path $lib); $i++) { Start-Sleep 4 }
+          Start-Sleep 5
+          Get-Process terminal64 -ErrorAction SilentlyContinue | Stop-Process -Force
+          Get-ChildItem "C:\Program Files\MetaTrader 5" | Select-Object Name
+          Get-ChildItem "$env:APPDATA\MetaQuotes" -Recurse -Depth 3 -ErrorAction SilentlyContinue | Select-Object FullName -First 30
+
+      - name: Compiler l'EA
+        shell: pwsh
+        run: |
+          $root = "C:\Program Files\MetaTrader 5"
+          $inc = Get-ChildItem -Path $root, "$env:APPDATA\MetaQuotes" -Recurse -Filter Trade.mqh -ErrorAction SilentlyContinue |
+                 Where-Object { $_.FullName -like "*Include\Trade\Trade.mqh" } | Select-Object -First 1
+          if (-not $inc) { throw "Bibliothèque standard MQL5 (Trade.mqh) introuvable" }
+          $mql5 = $inc.Directory.Parent.Parent.FullName
+          Write-Host "Dossier MQL5 : $mql5"
+          $dst = Join-Path $mql5 "Experts\Gold_AI_Signal_Bot_EA.mq5"
+          Copy-Item mql5\Gold_AI_Signal_Bot_EA.mq5 $dst -Force
+          $log = Join-Path $pwd "compile.log"
+          Start-Process "$root\metaeditor64.exe" -ArgumentList "/portable", "/compile:`"$dst`"", "/inc:`"$mql5`"", "/log:`"$log`"" -Wait
+          $text = Get-Content $log -Encoding Unicode -Raw
+          Write-Host $text
+          $ex5 = [IO.Path]::ChangeExtension($dst, ".ex5")
+          if ($text -notmatch "(?m)Result:?\s*0 errors" -or -not (Test-Path $ex5)) { throw "Compilation de l'EA en échec" }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item $ex5 dist\
+          Copy-Item mql5\Gold_AI_Signal_Bot_EA.mq5 dist\
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ea
+          path: dist/*

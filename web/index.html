@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gold AI Signal Bot · XAUUSD M5</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2311151c'/%3E%3Cpath d='M4 24 9 12h14l5 12Z' fill='%23e8b84a'/%3E%3Cpath d='M9 12h14l-2.5 5h-9Z' fill='%23f6d77a'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><path d="M4 24 9 12h14l5 12Z" fill="#e8b84a"/><path d="M9 12h14l-2.5 5h-9Z" fill="#f6d77a"/><path d="M4 24h24" stroke="#a87b1f" stroke-width="1.5"/><path d="M12 17h8" stroke="#a87b1f" stroke-width="1"/></svg>
+    <div>
+      <div class="brand-name">GOLD <span>AI</span></div>
+      <div class="brand-sub">Signal Bot · XAUUSD M5</div>
+    </div>
+  </div>
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-view="analyse">Analyse</button>
+    <button class="tab" data-view="signaux">Signaux <span class="pill" id="open-count" hidden></span></button>
+    <button class="tab" data-view="backtest">Backtest</button>
+    <button class="tab" data-view="robot">Robot <span class="bot-dot" id="bot-dot"></span></button>
+    <button class="tab" data-view="reglages">Réglages</button>
+  </nav>
+  <div class="top-right">
+    <div class="feed" id="feed"><span class="dot"></span><span id="feed-label">Connexion…</span></div>
+    <div class="countdown" title="Prochaine clôture M5"><span class="muted">Bougie</span> <b id="countdown">--:--</b></div>
+    <button class="icon-btn" id="alerts-btn" title="Alertes navigateur et son">
+      <svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 3a6 6 0 0 0-6 6v3.5L4.5 15v1h15v-1L18 12.5V9a6 6 0 0 0-6-6Zm0 18a2.5 2.5 0 0 0 2.4-2h-4.8A2.5 2.5 0 0 0 12 21Z" fill="currentColor"/></svg>
+    </button>
+    <button class="btn primary" id="scan-btn">
+      <svg viewBox="0 0 24 24" width="15" height="15"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+      Analyser
+    </button>
+  </div>
+</header>
+
+<main>
+  <!-- ============================== ANALYSE ============================== -->
+  <section class="view active" id="view-analyse">
+    <div class="banner" id="error-banner" hidden></div>
+    <div class="analyse-grid">
+      <div class="col-main">
+        <div class="quote card">
+          <div class="quote-main">
+            <div class="label">XAU / USD · or</div>
+            <div class="price mono" id="price">—</div>
+            <div class="chg mono" id="chg"></div>
+          </div>
+          <div class="quote-stats">
+            <div><span class="label">Plus haut 24 h</span><b class="mono" id="day-high">—</b></div>
+            <div><span class="label">Plus bas 24 h</span><b class="mono" id="day-low">—</b></div>
+            <div><span class="label">ATR M5</span><b class="mono" id="atr">—</b></div>
+            <div><span class="label">Dernière bougie</span><b class="mono" id="last-close">—</b></div>
+          </div>
+        </div>
+
+        <div class="card chart-card">
+          <div class="chart-toolbar">
+            <div class="legend" id="legend"></div>
+            <div class="toggles">
+              <label class="chk"><input type="checkbox" id="t-ema" checked><span>EMA</span></label>
+              <label class="chk"><input type="checkbox" id="t-zones" checked><span>Zones</span></label>
+              <label class="chk"><input type="checkbox" id="t-sig" checked><span>Signaux</span></label>
+              <button class="btn ghost sm" id="fit-btn">Recentrer</button>
+            </div>
+          </div>
+          <div id="chart" class="chart"></div>
+          <div class="rsi-head"><span class="label">RSI 14</span><span class="mono" id="rsi-val"></span></div>
+          <div id="rsi-chart" class="rsi-chart"></div>
+        </div>
+
+        <div class="under-chart">
+          <div class="card">
+            <div class="card-head"><h3>Zones clés</h3><span class="muted sm">distance en pips</span></div>
+            <div id="zones" class="zones"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h3>Derniers signaux</h3><button class="link" data-goto="signaux">Tout voir</button></div>
+            <div id="recent" class="recent"></div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="col-side">
+        <div class="card radar" id="radar-card">
+          <div class="card-head">
+            <h3>Radar</h3>
+            <span class="muted sm" id="radar-time"></span>
+          </div>
+          <div id="radar-body" class="radar-body"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Contexte du marché</h3></div>
+          <div class="ctx-grid" id="ctx"></div>
+        </div>
+
+      </aside>
+    </div>
+  </section>
+
+  <!-- ============================== SIGNAUX ============================== -->
+  <section class="view" id="view-signaux">
+    <div class="kpis" id="journal-kpis"></div>
+    <div class="card">
+      <div class="card-head wrap">
+        <h3>Journal des signaux</h3>
+        <div class="filters">
+          <div class="seg" id="f-side">
+            <button class="on" data-v="">Tous</button><button data-v="ACHAT">Achats</button><button data-v="VENTE">Ventes</button>
+          </div>
+          <select id="f-status">
+            <option value="">Tous les statuts</option><option value="en cours">En cours</option>
+            <option value="TP2">TP2 atteint</option><option value="BE">TP1 puis BE</option>
+            <option value="SL">Stop touché</option><option value="temps">Clôturé au temps</option>
+          </select>
+          <select id="f-quality">
+            <option value="">Toutes qualités</option><option>A+</option><option>A</option><option>B</option>
+          </select>
+          <a class="btn ghost sm" href="/api/journal.csv">Exporter CSV</a>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="table" id="journal-table">
+          <thead><tr>
+            <th>Date (UTC)</th><th>Sens</th><th>Figure</th><th>Score</th><th class="r">Entrée</th>
+            <th class="r">Stop</th><th class="r">TP1</th><th class="r">TP2</th><th>Statut</th><th class="r">Résultat</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="empty" id="journal-empty" hidden>Aucun signal pour ces filtres.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== BACKTEST ============================= -->
+  <section class="view" id="view-backtest">
+    <div class="card bt-form">
+      <div class="field">
+        <label for="bt-bars">Historique</label>
+        <select id="bt-bars">
+          <option value="1500">1 500 bougies (~5 jours)</option>
+          <option value="6000">6 000 bougies (~3 semaines)</option>
+          <option value="20000" selected>20 000 bougies (~10 semaines)</option>
+          <option value="50000">50 000 bougies (~6 mois, MT5)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="bt-score">Score minimum</label>
+        <input type="number" id="bt-score" min="0" max="10" step="0.5">
+      </div>
+      <div class="field">
+        <label for="bt-spread">Spread (pips)</label>
+        <input type="number" id="bt-spread" min="0" max="50" step="0.1">
+      </div>
+      <button class="btn primary" id="bt-run">Lancer le backtest</button>
+      <p class="muted sm bt-note">50 % fermé à TP1 puis stop au point d'entrée, reste à TP2, sortie forcée après 4 h. SL compté en premier si SL et TP sont dans la même bougie.</p>
+    </div>
+    <div id="bt-result" hidden>
+      <div class="kpis" id="bt-kpis"></div>
+      <div class="bt-grid">
+        <div class="card">
+          <div class="card-head"><h3>Courbe de capital</h3><span class="muted sm">en R cumulés</span></div>
+          <div id="equity-chart" class="equity-chart"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>Par heure de clôture (UTC)</h3></div>
+          <div id="bt-hours" class="hours"></div>
+        </div>
+      </div>
+      <div class="bt-grid">
+        <div class="card">
+          <div class="card-head"><h3>Par figure</h3><span class="muted sm">désactive celles qui perdent dans Réglages</span></div>
+          <div class="table-wrap"><table class="table" id="bt-patterns"><thead><tr><th>Figure</th><th class="r">Trades</th><th class="r">Réussite</th><th class="r">Espérance</th><th>Total</th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>Par qualité</h3></div>
+          <div class="table-wrap"><table class="table" id="bt-quality"><thead><tr><th>Qualité</th><th class="r">Trades</th><th class="r">Réussite</th><th class="r">Espérance</th><th>Total</th></tr></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Trades</h3><span class="muted sm" id="bt-period"></span></div>
+        <div class="table-wrap tall"><table class="table" id="bt-trades"><thead><tr><th>Date (UTC)</th><th>Sens</th><th>Figure</th><th>Score</th><th class="r">Entrée</th><th>Sortie</th><th class="r">Résultat</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+    <div class="empty big" id="bt-empty">Lance un backtest pour mesurer la stratégie sur l'historique.</div>
+  </section>
+
+  <!-- ============================== RÉGLAGES ============================= -->
+  <!-- ============================== ROBOT ================================ -->
+  <section class="view" id="view-robot">
+    <div class="banner" id="bot-error" hidden></div>
+    <div class="bot-hero card">
+      <div class="bot-state">
+        <span class="label">État du robot</span>
+        <div class="state-pill" id="bot-state">—</div>
+        <div class="muted sm" id="bot-sub"></div>
+      </div>
+      <div class="bot-account" id="bot-account"></div>
+      <div class="bot-actions">
+        <button class="btn primary" id="bot-toggle">Activer le robot</button>
+        <button class="btn ghost" id="bot-auto" title="L'application démarre avec l'ordinateur, sans fenêtre, et relance le robot seule">Mode autonome</button>
+        <button class="btn ghost" id="bot-test" title="Ouvre puis ferme aussitôt une position au lot minimum (compte démo)">Tester un ordre</button>
+        <button class="btn danger" id="bot-kill" title="Désactive le robot et clôture toutes ses positions">Arrêt d'urgence</button>
+      </div>
+    </div>
+
+    <div class="card ready-card" id="bot-ready" hidden>
+      <div class="card-head"><h3>Pourquoi le robot ne trade pas</h3><span class="muted sm">vérifié en permanence</span></div>
+      <ul class="ready-list" id="bot-ready-list"></ul>
+    </div>
+
+    <div class="kpis" id="bot-kpis"></div>
+
+    <div class="card quality-card">
+      <div class="card-head wrap"><h3>Contrôle qualité avant ordre</h3>
+        <span class="muted sm">chaque signal doit passer tous ces contrôles avant que le robot ne place un ordre</span></div>
+      <div class="q-grid">
+        <div>
+          <div class="q-sub">Dernière analyse <span class="muted sm" id="q-last-time"></span></div>
+          <div id="q-last" class="q-checks"></div>
+        </div>
+        <div>
+          <div class="q-sub">Figures qualifiées sur ton historique
+            <button class="btn sm ghost" id="q-recompute">Recalculer</button></div>
+          <div class="muted sm" id="q-edge-sub"></div>
+          <div class="table-wrap"><table class="table q-table" id="q-edge"><thead><tr><th>Figure</th><th class="r">Trades</th><th class="r">Espérance</th><th class="r">PF</th><th>Robot</th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <div>
+          <div class="q-sub">Gestion des sorties (même historique)</div>
+          <div id="q-mgmt" class="ml-compare"></div>
+                    <div class="q-sub">Annonces USD <button class="btn sm ghost" id="q-news-refresh">Actualiser</button></div>
+          <div id="q-news" class="q-news"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card ml-card">
+      <div class="card-head wrap"><h3>Intelligence artificielle <span class="ml-state" id="ml-state"></span></h3>
+        <span class="muted sm">probabilité de gain apprise sur ton historique, mesurée sur une période récente jamais vue</span>
+        <button class="btn sm ghost" id="ml-train">Réentraîner</button></div>
+      <div class="muted sm" id="ml-sub"></div>
+      <div class="ml-grid">
+        <div>
+          <div class="q-sub">Période test (jamais vue par le modèle)</div>
+          <div class="ml-compare" id="ml-compare"></div>
+        </div>
+        <div>
+          <div class="q-sub">Fiabilité des probabilités</div>
+          <div class="table-wrap"><table class="table q-table" id="ml-calib"><thead><tr><th>Probabilité</th><th class="r">Signaux</th><th class="r">Prévu</th><th class="r">Réel</th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <div>
+          <div class="q-sub">Ce qui compte le plus pour le modèle</div>
+          <div id="ml-imp" class="ml-imp"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Positions ouvertes du robot</h3><span class="muted sm" id="bot-pos-sub"></span></div>
+      <div class="table-wrap">
+        <table class="table" id="bot-positions">
+          <thead><tr><th>Ticket</th><th>Sens</th><th class="r">Lots</th><th class="r">Entrée</th><th class="r">Stop</th><th class="r">Objectif</th><th class="r">P/L</th><th>Ouverte</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="empty" id="bot-pos-empty">Aucune position ouverte par le robot.</div>
+      </div>
+    </div>
+
+    <div class="bt-grid">
+      <div class="card">
+        <div class="card-head"><h3>Activité du robot</h3><span class="muted sm">aussi affichée dans le terminal</span></div>
+        <div class="bot-log" id="bot-log"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Historique des ordres</h3></div>
+        <div class="table-wrap tall">
+          <table class="table" id="bot-trades">
+            <thead><tr><th>Date (UTC)</th><th>Sens</th><th class="r">Lots</th><th class="r">Prix</th><th>Statut</th><th class="r">P/L</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <form class="card" id="bot-form">
+      <div class="card-head wrap"><h3>Réglages du robot</h3><span class="muted sm">s'appliquent au prochain signal</span>
+        <div class="profiles"><span class="muted sm">Profil :</span><span id="bot-profiles"></span></div></div>
+      <div class="form-grid">
+        <div class="field"><label>Exécution</label>
+          <select name="mode"><option value="mt5">MetaTrader 5</option><option value="paper">Simulateur (sans argent)</option></select></div>
+        <div class="field"><label>Risque par trade (% du solde)</label><input name="risk_percent" type="number" step="0.05" min="0.01" max="5"><span class="hint muted sm" id="risk-hint"></span></div>
+        <div class="field"><label>Score minimum pour trader</label><input name="min_score" type="number" step="0.5" min="0" max="10"></div>
+        <div class="field"><label>Perte max par jour (%)</label><input name="daily_loss_limit_percent" type="number" step="0.5" min="0.1" max="20"></div>
+        <div class="field"><label>Trades ouverts en même temps</label><input name="max_open_trades" type="number" min="1" max="10"></div>
+        <div class="field"><label>Trades max par jour</label><input name="max_trades_per_day" type="number" min="1" max="50"></div>
+        <div class="field"><label>Spread max (pips)</label><input name="max_spread_pips" type="number" step="0.1" min="0.1"></div>
+        <div class="field"><label>Écart de prix max (pips)</label><input name="max_slippage_pips" type="number" step="0.1" min="0.1"></div>
+        <div class="field"><label>Lot max par trade</label><input name="max_lots" type="number" step="0.01" min="0.01"></div>
+        <div class="field"><label class="switch"><input type="checkbox" name="split_targets"><span></span>2 positions (TP1 + TP2)</label></div>
+        <div class="field"><label class="switch"><input type="checkbox" name="breakeven"><span></span>Stop à l'entrée après TP1</label></div>
+        <div class="field"><label class="switch"><input type="checkbox" name="close_after_max_hold"><span></span>Clôturer après 4 h</label></div>
+        <div class="field"><label class="switch"><input type="checkbox" name="start_enabled"><span></span>Activer au démarrage</label></div>
+        <div class="field"><label class="switch live"><input type="checkbox" name="allow_live"><span></span>Autoriser un compte RÉEL</label></div>
+      </div>
+      <h3 class="form-sub">Encaisser le profit</h3>
+      <div class="form-grid">
+        <div class="field"><label>Style</label>
+          <select id="quick-preset"><option value="off">Laisser courir (TP1 + TP2 de l'analyse)</option><option value="petit">Petit profit rapide (0,6 R)</option><option value="moyen">Profit moyen (1,2 R)</option><option value="perso">Personnalisé</option></select>
+          <span class="hint muted sm">Ferme tout le trade dès l'objectif ; le stop suiveur verrouille une partie du gain avant.</span></div>
+        <div class="field"><label>Objectif unique (R, 0 = désactivé)</label><input name="quick_target_r" type="number" step="0.1" min="0" max="3"><span class="hint muted sm">1 R = la distance entre l'entrée et le stop (sur l'or, souvent 30 à 90 pips, soit 3 à 9 $ par once).</span></div>
+      </div>
+      <h3 class="form-sub">Entrée de précision</h3>
+      <div class="form-grid">
+        <div class="field"><label>Entrée</label>
+          <select name="entry_mode"><option value="market">Au marché, à la clôture de la bougie</option><option value="pullback">Sur repli (ordre limite surveillé chaque seconde)</option></select></div>
+        <div class="field"><label>Repli attendu (fraction du risque)</label><input name="pullback_r" type="number" step="0.05" min="0.05" max="0.8"><span class="hint muted sm">0,3 = entrée 30 % plus près du stop : stop plus court, même objectif.</span></div>
+        <div class="field"><label>Validité de l'entrée (bougies)</label><input name="pullback_bars" type="number" min="1" max="12"><span class="hint muted sm">Annulée si le prix atteint TP1 ou le stop avant, ou à l'expiration.</span></div>
+      </div>
+      <h3 class="form-sub">Trades à score faible</h3>
+      <div class="form-grid">
+        <div class="field"><label class="switch"><input type="checkbox" name="low_score_enabled"><span></span>Trader aussi les scores faibles</label></div>
+        <div class="field"><label>À partir du score</label><input name="low_score_min" type="number" step="0.5" min="0" max="10"></div>
+        <div class="field"><label>Risque pour ces trades (× le risque normal)</label><input name="low_score_risk_factor" type="number" step="0.05" min="0.1" max="1"><span class="hint muted sm">0,5 = moitié du risque. Tous les autres contrôles (statistiques, IA, annonces…) s'appliquent quand même.</span></div>
+      </div>
+      <h3 class="form-sub">Suivi des gains et sorties automatiques</h3>
+      <div class="form-grid">
+        <div class="field"><label class="switch"><input type="checkbox" name="trailing"><span></span>Stop suiveur (suit les gains)</label></div>
+        <div class="field"><label>Démarre à un gain de (R)</label><input name="trail_start_r" type="number" step="0.1" min="0.2" max="5"></div>
+        <div class="field"><label>Distance derrière le meilleur prix (R)</label><input name="trail_distance_r" type="number" step="0.1" min="0.2" max="3"><span class="hint muted sm">1 R = la distance entre l'entrée et le stop initial.</span></div>
+        <div class="field"><label class="switch"><input type="checkbox" name="reversal_exit"><span></span>Sortir sur signal de retournement</label></div>
+        <div class="field"><label>Score du signal inverse</label><input name="reversal_score" type="number" step="0.5" min="0" max="10"></div>
+        <div class="field"><label class="switch"><input type="checkbox" name="reversal_momentum"><span></span>… ou perte d'élan</label><span class="hint muted sm">La bougie repasse sous l'EMA 20 (achat) avec un RSI sous 50.</span></div>
+        <div class="field"><label class="switch"><input type="checkbox" name="reversal_structure"><span></span>… ou cassure du dernier creux / sommet</label><span class="hint muted sm">Creux (achat) ou sommet (vente) formé depuis l'entrée, cassé en clôture.</span></div>
+        <div class="field"><label class="switch"><input type="checkbox" name="management_auto"><span></span>Seulement si l'historique le confirme</label><span class="hint muted sm">Sinon le robot revient à la gestion classique TP1 / break-even / TP2.</span></div>
+      </div>
+      <h3 class="form-sub">Contrôle qualité</h3>
+      <div class="form-grid">
+        <div class="field"><label class="switch"><input type="checkbox" name="quality_edge"><span></span>Figure rentable sur l'historique</label></div>
+        <div class="field"><label>Historique de validation (bougies)</label><input name="edge_bars" type="number" min="3000" max="100000" step="1000"></div>
+        <div class="field"><label>Trades historiques minimum par figure</label><input name="edge_min_trades" type="number" min="5" max="500"></div>
+        <div class="field"><label>Espérance minimale (R / trade)</label><input name="edge_min_expectancy" type="number" step="0.01"></div>
+        <div class="field"><label>Profit factor minimal</label><input name="edge_min_pf" type="number" step="0.05" min="0"></div>
+        <div class="field"><label class="switch"><input type="checkbox" name="edge_block_unproven"><span></span>Bloquer les figures sans assez d'historique</label><span class="hint muted sm">Désactivé : seules les figures prouvées perdantes sont bloquées.</span></div>
+        <div class="field"><label class="switch"><input type="checkbox" name="quality_mtf"><span></span>M15 / H1 / H4 pas contre le trade</label></div>
+        <div class="field"><label class="switch"><input type="checkbox" name="quality_news"><span></span>Éviter les annonces majeures</label></div>
+        <div class="field"><label>Marge autour d'une annonce (min)</label><input name="news_window_min" type="number" min="0" max="240"></div>
+        <div class="field"><label class="switch"><input type="checkbox" name="news_block_on_error"><span></span>Bloquer si calendrier indisponible</label></div>
+        <div class="field"><label>Volatilité ATR min (pips)</label><input name="min_atr_pips" type="number" step="0.5" min="0"></div>
+        <div class="field"><label>Volatilité ATR max (pips)</label><input name="max_atr_pips" type="number" step="0.5" min="1"></div>
+      </div>
+      <h3 class="form-sub">Intelligence artificielle</h3>
+      <div class="form-grid">
+        <div class="field"><label class="switch"><input type="checkbox" name="quality_ml"><span></span>Filtrer avec la probabilité IA</label></div>
+        <div class="field"><label>Probabilité minimum (0 = automatique)</label><input name="ml_min_proba" type="number" step="0.01" min="0" max="0.9"><span class="hint muted sm">0 = seuil choisi en validation. Un seuil manuel force le filtre même si le modèle n'a pas prouvé son utilité.</span></div>
+      </div>
+      <div class="save-bar static"><span class="muted sm" id="bot-save-msg"></span><button type="submit" class="btn primary">Enregistrer</button></div>
+    </form>
+
+    <div class="box-warn">
+      <b>Le trading automatique comporte un risque réel de perte.</b> Le robot n'exécute que les signaux validés, avec les garde-fous ci-dessus, mais aucun système ne garantit un gain. Teste-le d'abord en <b>Simulateur</b> puis sur un <b>compte démo</b> pendant plusieurs semaines. Par défaut, il refuse de trader sur un compte réel.
+    </div>
+  </section>
+
+  <section class="view" id="view-reglages">
+    <div class="settings sys-grid">
+      <div class="card">
+        <div class="card-head"><h3>État du système</h3><button class="btn ghost sm" id="diag-run">Vérifier</button></div>
+        <div id="diag" class="diag"><div class="muted sm">Vérification…</div></div>
+      </div>
+      <div class="card about">
+        <div class="card-head"><h3>À propos</h3><span class="mono muted sm" id="about-version"></span></div>
+        <p class="muted sm" id="about-dir"></p>
+        <div class="about-actions">
+          <button class="btn sm primary" id="wizard-open">Assistant de configuration</button>
+          <a class="btn sm ghost" href="/guide" target="_blank" rel="noopener">Guide d'utilisation (PDF)</a>
+          <button class="btn sm ghost" id="open-folder">Ouvrir le dossier des données</button>
+          <a class="btn sm ghost" href="https://github.com/ck526438-lgtm/gold-ai-signal-bot/releases" target="_blank" rel="noopener">Mises à jour</a>
+        </div>
+      </div>
+    </div>
+    <form id="settings-form" class="settings">
+      <div class="card">
+        <div class="card-head"><h3>Données</h3></div>
+        <div class="form-grid">
+          <div class="field"><label>Source</label>
+            <select name="source">
+              <option value="auto">Auto (MT5, sinon Yahoo)</option><option value="mt5">MetaTrader 5</option>
+              <option value="yfinance">Yahoo Finance</option><option value="csv">Fichier CSV</option><option value="demo">Démo (simulé)</option>
+            </select></div>
+          <div class="field"><label>Symbole chez le courtier</label><input name="symbol"></div>
+          <div class="field"><label>Bougies chargées</label><input name="bars" type="number" min="300" max="100000" step="100"></div>
+          <div class="field"><label>Décalage heure serveur MT5 (h)</label><input name="broker_utc_offset" type="number" min="-12" max="14"></div>
+          <div class="field span2"><label>Fichier CSV (si source CSV)</label><input name="csv_path" placeholder="C:\chemin\historique.csv"></div>
+          <div class="field span2"><label>Terminal MetaTrader 5 (vide = détection automatique)</label><input name="mt5_path" placeholder="C:\Program Files\MetaTrader 5\terminal64.exe"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Sélection des signaux</h3></div>
+        <div class="form-grid">
+          <div class="field span2"><label>Score minimum : <b id="ms-out" class="mono"></b> / 10</label>
+            <input name="strategy.min_score" type="range" min="4" max="9" step="0.5"></div>
+          <div class="field"><label>ADX minimum</label><input name="strategy.adx_min" type="number" step="1" min="0" max="50"></div>
+          <div class="field"><label>Délai entre signaux (bougies)</label><input name="strategy.cooldown_bars" type="number" min="0" max="48"></div>
+          <div class="field"><label class="switch"><input type="checkbox" name="strategy.use_sessions"><span></span>Seulement pendant les sessions</label></div>
+          <div class="field"><label>Sessions (UTC)</label><input name="strategy.sessions_utc" placeholder="7-11, 12-17"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Gestion du risque</h3></div>
+        <div class="form-grid">
+          <div class="field"><label>Stop minimum (pips)</label><input name="strategy.min_sl_pips" type="number" step="0.5"></div>
+          <div class="field"><label>Stop maximum (pips)</label><input name="strategy.max_sl_pips" type="number" step="0.5"></div>
+          <div class="field"><label>Marge sous la mèche (ATR)</label><input name="strategy.sl_atr_buffer" type="number" step="0.05"></div>
+          <div class="field"><label>TP1 (R)</label><input name="strategy.rr_tp1" type="number" step="0.1"></div>
+          <div class="field"><label>TP2 (R)</label><input name="strategy.rr_tp2" type="number" step="0.1"></div>
+          <div class="field"><label>Espace mini avant zone opposée (R)</label><input name="strategy.min_room_r" type="number" step="0.1"></div>
+          <div class="field"><label>Spread simulé (pips)</label><input name="strategy.spread_pips" type="number" step="0.1"></div>
+          <div class="field"><label>Durée max d'un trade (bougies)</label><input name="strategy.max_hold_bars" type="number" step="1"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Figures actives</h3><span class="muted sm">décoche celles qui ne marchent pas chez ton courtier</span></div>
+        <div class="patterns" id="pattern-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>Notifications</h3></div>
+        <div class="form-grid">
+          <div class="field"><label class="switch"><input type="checkbox" id="n-browser"><span></span>Notification du navigateur</label></div>
+          <div class="field"><label class="switch"><input type="checkbox" id="n-sound"><span></span>Son à chaque signal</label></div>
+          <div class="field"><label class="switch"><input type="checkbox" name="desktop_notifications"><span></span>Notification Windows (plyer)</label></div>
+          <p class="muted sm span2">Les signaux s'affichent aussi en couleur dans le terminal qui a lancé l'application, avec un bip.</p>
+        </div>
+      </div>
+
+      <div class="save-bar">
+        <span class="muted sm" id="save-msg"></span>
+        <button type="button" class="btn ghost" id="reset-btn">Annuler</button>
+        <button type="submit" class="btn primary">Enregistrer</button>
+      </div>
+    </form>
+  </section>
+</main>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-box" role="dialog" aria-modal="true">
+    <h3 id="modal-title"></h3>
+    <div id="modal-body"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="modal-cancel">Annuler</button>
+      <button class="btn primary" id="modal-ok">Confirmer</button>
+    </div>
+  </div>
+</div>
+
+
+<div class="wizard" id="wizard" hidden>
+  <div class="wizard-box" role="dialog" aria-modal="true" aria-labelledby="wz-title">
+    <div class="wz-steps" id="wz-steps"></div>
+    <div class="wz-body" id="wz-body"></div>
+    <div class="wz-actions">
+      <button class="btn ghost" id="wz-skip">Passer</button>
+      <span class="wz-spacer"></span>
+      <button class="btn ghost" id="wz-back">Retour</button>
+      <button class="btn primary" id="wz-next">Continuer</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/vendor/lightweight-charts.standalone.production.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,286 +1,349 @@
-# GOLD AI SIGNAL BOT — XAUUSD M5
+# Gold AI Signal Bot — XAUUSD M5
 
-Bot d'analyse de graphique pour l'or sur MetaTrader 5, en Python, qui émet des
-signaux à chaque clôture de bougie M5. Deux moteurs, évalués sur les mêmes
-bougies et les mêmes coûts :
+**Espace d'analyse et robot de trading de l'or (XAUUSD) en M5**, basé sur les chandeliers japonais —
+la même analyse que [EURUSD M5 Analyzer](https://github.com/ck526438-lgtm/eurusd-m5-analyzer),
+réglée pour l'or : graphique en direct, **radar** qui note chaque bougie sur 10 et explique pourquoi,
+zones de support / résistance, contexte M15 / H1 / H4, journal qui suit le résultat de chaque signal,
+backtest complet, filtre d'**IA** validé hors échantillon et **robot MetaTrader 5** avec gestion du risque.
+Application **Windows** (installateur `.exe`), alertes dans le navigateur, le terminal et Windows.
 
-| Moteur | Commande | Ce qu'il fait |
+![Espace d'analyse](docs/analyse.png)
+
+📘 **[Guide d'utilisation (PDF)](docs/Guide_Gold_AI_Signal_Bot.pdf)**
+
+> ⚠️ Le trading de l'or comporte un risque élevé de perte. Le robot est **désactivé par défaut** et
+> **refuse les comptes réels** tant que tu ne l'autorises pas. Valide la stratégie par le backtest sur
+> **tes** données MT5, puis en Simulateur et sur **compte démo** avant tout passage au réel.
+
+---
+
+## Ce qui change par rapport à la v1
+
+La v1 (moteur à règles 0-100 + ML, en ligne de commande) reste disponible sous le tag
+[`v1-regles-ml`](../../tree/v1-regles-ml). Son propre banc d'essai l'avait montré honnêtement :
+**sur 77 000 bougies réelles, aucun des moteurs ne battait les coûts** (spread 0,33 $ + glissement),
+et le ML était légèrement négatif. La v2 reprend le moteur de l'analyseur EURUSD, qui ajoute ce qui
+manquait :
+
+| | v1 | v2 |
 |---|---|---|
-| **v1 — règles** | `signal`, `backtest --engine rules` | 6 familles pondérées (tendance, momentum, retour à la moyenne, volatilité, price action, session) → score 0-100 |
-| **v2 — ML** | `train`, `backtest --engine ml` | HistGradientBoosting entraîné en walk-forward, prédit le franchissement d'un seuil en ATR sur 12 bougies |
-| **consensus** | `backtest --engine both` | Le signal n'existe que si les deux moteurs sont d'accord sur le même sens |
+| Analyse | score 0-100 de 6 familles d'indicateurs | 12 figures de chandeliers + confluence /10 expliquée critère par critère |
+| Contexte | tendance EMA | tendances M15 / H1 / H4, zones S/R avec nombre de touches, ADX, RSI, sessions |
+| Filtrage | seuil de score | **contrôle qualité** : figure rentable sur **ton** historique, tendances alignées, pas d'annonce USD à ±30 min, volatilité, probabilité IA |
+| IA | prédiction directe du sens (AUC 0,52) | probabilité qu'un **signal** soit gagnant, validée sur une période jamais vue ; elle ne bloque que si elle fait mieux que la stratégie seule |
+| Gestion | SL/TP en ATR | lot selon le risque, TP1 + TP2, break-even, stop suiveur, sortie sur retournement, entrée sur repli, pause après perte du jour |
+| Interface | terminal | application Windows (navigateur local), assistant de démarrage, journal, backtest graphique |
+| MT5 | exécution verrouillée | robot démo par défaut + **EA autonome** pour MetaTrader 5 |
+
+**Réglages adaptés à l'or** (1 pip = 0,10 $ = 10 points) : stop de 25 à 150 pips (2,50 $ à 15 $),
+spread simulé 3,3 pips (0,33 $, mesuré sur ForexClub démo), spread maximum 6 pips, volatilité ATR M5
+acceptée de 10 à 120 pips, sessions Londres 7 h–11 h et New York 12 h–20 h UTC, annonces **USD**
+seulement, détection des noms `XAUUSD`, `XAUUSDm`, `XAUUSD.pro`, `GOLD`, `GOLDm`…
+
+> Le moteur est meilleur pour **expliquer** le marché et **filtrer** les setups, mais rien ne garantit
+> qu'il gagne sur l'or en M5 : le spread y pèse lourd. C'est pour ça que le robot ne trade que les
+> figures **prouvées rentables sur ton propre historique** (recalculé chaque jour). Lance un backtest
+> de 50 000 bougies sur tes données MT5 avant d'activer quoi que ce soit.
 
 ---
 
-## État des lieux chiffré (à lire avant de dépenser un euro)
+## Installation (Windows)
 
-Mesure sur **77 348 bougies M5 réelles** du serveur ForexClub demo, 5 octobre
-2025 → 9 novembre 2026, avec spread 33 points + 2 slippages de 5 points, soit
-**0,43 USD par aller-retour**, et un t-test sur la moyenne des R multiples.
+1. Ouvre la page **[Releases](../../releases)** et télécharge `Gold-AI-Signal-Bot-Setup-x.y.z.exe`.
+2. Lance l'installateur (si Windows SmartScreen s'affiche : *Informations complémentaires* →
+   *Exécuter quand même*). Options : raccourci Bureau, lancement au démarrage de Windows.
+3. Ouvre **MetaTrader 5**, connecte-toi, affiche l'or dans *Observation du marché*, active **Algo Trading** (pour le robot).
+4. Lance **Gold AI Signal Bot** depuis le menu Démarrer : l'interface s'ouvre sur
+   `http://localhost:8010`, la fenêtre noire affiche les notifications.
 
-```
-engine  trades  per_day   win%   avg_R  t_stat  significatif  exp_net  exp_brut    PF   total_pts  maxDD
- rules    1948     5.68  38.40 -0.0281   -0.89         False   -0.154     0.276  0.975     -299.5  872.6
-    ml    3210     9.36  41.78 -0.0357   -1.68         False   -0.179     0.251  0.964     -575.4 1178.6
-  both      70     0.20  40.00  0.0195    0.12         False    1.904     2.334  1.364      133.3   57.6
-```
+Aucun Python à installer. Les réglages, le journal et l'historique du robot sont dans
+`%LOCALAPPDATA%\Gold AI Signal Bot` et sont conservés lors des mises à jour. Une version **portable**
+(zip) est aussi publiée dans chaque Release. L'application peut tourner **à côté d'EURUSD M5 Analyzer** :
+port, dossier de données et numéro magic sont différents.
 
-`per_day` est rapporte au nombre de jours ou il existe des bougies (343 jours
-de cotation), pas aux seuls jours ou le bot a trade : un reglage rare comme le
-consensus fait 0,2 signal/jour, pas 1,2.
+Au premier lancement, un **assistant** détecte MetaTrader 5, le compte, le nom de l'or chez ton
+courtier et le décalage horaire. **Réglages → État du système** vérifie tout et indique quoi corriger.
 
-Ce que ça veut dire, sans tourner autour du pot :
+## Installation (Kali Linux, Debian, Ubuntu)
 
-- **Aucun des trois moteurs ne bat les coûts de façon significative.** Le
-  meilleur t-stat est 0,12 pour 1,96 requis. En clair : sur ces données, l'edge
-  mesurable est nul.
-- Le ML est meme **légèrement négatif avec une confiance qui se tient**
-  (t = -1,68, 3 210 trades) : sa direction vaut un peu moins que le hasard une
-  fois le spread paye. Le signaler comme « moteur v2 » ne le rend pas meilleur.
-- Les deux moteurs seuls rendent **négatif net** alors qu'ils sont **positifs
-  bruts** : la direction est légèrement meilleure que le hasard, le spread la
-  mange. C'est le problème central du M5 sur l'or.
-- Le consensus est le seul positif (+1,9 pt/trade, drawdown divisé par 15),
-  mais sur **70 trades** : c'est un indice, pas une preuve.
-- Le ML a un vrai signal, très faible : AUC walk-forward **0,524**, précision
-  directionnelle **52,6 %** contre 51,2 % de base, et calibration monotone
-  (probabilité 0,41 → 0,55 de hausse réelle). Un AUC de 0,52 sur du 60 minutes
-  est typique : prédire l'or à court terme est proche du bruit.
-
-La grille `tune` (64 réglages, split in-sample/out-of-sample) montre aussi que
-**miner les heures gagnantes ne tient pas** : le mode `learn_from_is` passe de
-+1,54 pt en in-sample à -0,98 pt en out-of-sample (decay -2,5). C'est du curve
-fitting, et le harness est là précisément pour le dénoncer.
-
-### Le sens est-il vraiment informé ? (`compare`, temoin de direction)
-
-Un backtest négatif ne dit pas si le moteur ne comprend rien au marché ou s'il
-comprend mais paie trop de spread. `compare` répond en rejouant **le même
-timing de signaux avec le sens tiré à pile ou face** (sortie sur retournement
-coupée des deux côtés, sinon les deux variantes n'ont pas le même nombre de
-trades) :
-
-```
-engine  n_reel  net_reel  t_reel  n_hasard  net_hasard  sd_hasard  apport_sens  net_tjs_buy  net_tjs_sell
- rules    1948    -0.158   -0.90      1997      -0.612      0.207        0.454       -0.649        -0.076
-    ml    2876    -0.119   -1.07      2850      -0.353      0.200        0.234       -1.016         0.193
+```bash
+tar xzf gold-ai-signal-bot-linux-*.tar.gz && cd gold-ai-signal-bot-*/   # archive de la page Releases
+./install.sh                # analyse (prix Yahoo GC=F) + robot en Simulateur
+./install.sh --with-mt5     # + MetaTrader 5 sous Wine et son pont : robot réel depuis Linux
+./install.sh --service      # + démarrage automatique à l'ouverture de session
+gold-ai                     # lancer (ou menu Applications → Gold AI Signal Bot)
 ```
 
-- `apport_sens` = ce que rapporte le **choix de la direction**, à nombre de
-  trades comparable : **+0,45 pt/trade pour les règles**, +0,23 pour le ML.
-  L'information directionnelle est donc **réelle** — mais elle vaut à peu de
-  choses près le **0,43 USD de coût par aller-retour**. C'est toute l'histoire :
-  le moteur a raison de justesse, et c'est le courtage qui gagne.
-- Une direction fixe ne fait pas mieux (`net_tjs_buy` -0,65, `net_tjs_sell`
-  -0,08) : le résultat ci-dessus n'est pas de la beta déguisée.
-- Le témoin est trompeur pour `both` : au hasard les deux moteurs sont d'accord
-  une fois sur deux, son `apport_sens` (+2,9) est sur-évalué.
+### Depuis le code source
 
-### Élargir l'horizon : testé, ça aide, ça ne prouve rien
-
-Sweep `risk.tp_atr` × `backtest.max_hold_bars` (moteur règles, split
-2026-06-01, 343 jours de cotation) :
-
-| tp/ATR | hold | trades OOS | net/trade IS | net/trade OOS | t OOS |
-|---|---|---|---|---|---|
-| 2,5 | 6 h | 803 | +0,29 | **-0,79** | -2,05 |
-| 6,0 | 12 h | 583 | +1,33 | +0,03 | -0,15 |
-| 12,0 | 24 h | 435 | +2,45 | **+0,74** | +0,66 |
-
-Le mécanisme est celui attendu — 0,43 USD de coût fixe sur une cible 5 fois
-plus large pèse 5 fois moins — et le gain vient aussi du **nombre de trades
-divisé par deux** (le backtest est séquentiel : des sorties plus lointaines
-consomment plus de bougies). Mais le t hors échantillon reste à 0,66 et le
-profil devient méconnaissable : **18 % de trades gagnants**, 42 bougies de
-détention moyenne, soit du swing avec une entrée en M5, plus de l'aide à la
-décision sur M5.
-
-**Les réglages livrés ne changent pas.** Passer `tp_atr` à 12 parce que ça
-améliore le tableau que je viens de courir sur la fenêtre de test, c'est
-l'exact contraire de ce que `tune` et ce témoin existent à dénoncer. C'est la
-première piste à re-tester sur données fraîches, pas un défaut à éditer
-aujourd'hui.
-
-**Conséquence pratique :** ce bot est livré comme **assistant de signal + suivi
-papier**, avec exécution automatique verrouillée (`trading.auto_execute: false`).
-Ce n'est pas un robot à laisser déposité sur un compte réel.
-
----
-
-## Installation — Windows (MT5 natif)
-
-Le paquet `MetaTrader5` n'existe que sous Windows : c'est là que le terminal
-tourne et que les données sont récupérées.
-
-```bat
+```bash
+git clone https://github.com/ck526438-lgtm/gold-ai-signal-bot.git
 cd gold-ai-signal-bot
-python -m pip install -r requirements.txt
-copy config.example.yaml config.yaml
-python bot.py doctor
-python bot.py fetch --days 400
-python bot.py check
+pip install -r requirements.txt MetaTrader5
+python main.py                   # ou start.bat sous Windows ; --demo pour un marché simulé
 ```
-
-`doctor` doit afficher `"connected": true`, le nom du symbole résolu et
-`"broker_utc_offset_hours"` qui correspond à ton serveur (ici **2**).
-
-## Installation — Kali
-
-Le paquet Python `MetaTrader5` **ne s'installe pas** sous Linux (aucune roue
-`manylinux`, et le module charge une `.dll` MetaQuotes). Le bot tourne donc
-sur Kali en mode **bridge** : le PC Windows sert les données, Kali fait
-l'analyse, les règles, le ML, le backtest et le live.
-
-**1. Sur Windows** — terminal MT5 lancé et connecté, puis :
-
-```bat
-python bot.py bridge
-```
-
-Note l'adresse IP de la machine et le **token** affiché.
-
-**2. Sur Kali** :
-
-```bash
-git clone <repo> gold-ai-signal-bot && cd gold-ai-signal-bot
-python3 -m venv .venv && source .venv/bin/activate
-pip install numpy pandas scikit-learn PyYAML requests   # pas de MetaTrader5
-cp config.example.yaml config.yaml
-```
-
-Puis dans `config.yaml` :
-
-```yaml
-data:
-  provider: bridge
-  bridge:
-    url: http://IP_WINDOWS:8765
-```
-
-et dans `.env` à la racine (`cp .env.example .env`, puis coller la valeur) :
-
-```
-GOLDBOT_BRIDGE_TOKEN=le_token_affiche
-```
-
-**3. Vérifier depuis Kali** :
-
-```bash
-python bot.py doctor      # doit voir le serveur broker via le bridge
-python bot.py fetch --days 400
-python bot.py selftest --skip-bridge
-```
-
-Le bridge n'expose que des données de marché : pas d'ordres, pas de compte
-modifiable, et l'authentification est une comparaison constante de temps.
-Ne l'expose jamais sur Internet — réseau local uniquement.
 
 ---
+
+## Robot de trading (onglet Robot)
+
+![Robot](docs/robot.png)
+
+À chaque signal validé (score ≥ 7 par défaut), le robot :
+
+- **calcule le lot** à partir du risque choisi (0,5 % du solde par défaut) et de la distance du stop,
+  avec la valeur du mouvement fournie par MT5 (contrat de 100 onces, toutes devises de compte) — arrondi vers le bas ;
+- ouvre **2 positions** (TP1 et TP2) avec stop et objectifs enregistrés chez le courtier ;
+- déplace le stop de la 2ᵉ position **au prix d'entrée** quand TP1 est atteint ;
+- **suit les gains** avec un stop suiveur : dès +1 R, le stop suit le meilleur prix à 0,7 R
+  de distance et ne recule jamais (vérifié toutes les 3 s tant qu'une position est ouverte) ;
+- **coupe automatiquement au retournement** : figure de chandelier inverse (score ≥ 6), et en
+  option perte d'élan (clôture qui repasse l'EMA 20 avec le RSI de l'autre côté de 50) ou
+  cassure du dernier creux / sommet formé depuis l'entrée ;
+- clôture ce qui reste après **4 h**.
+
+Le stop suiveur et la sortie sur retournement sont rejoués dans le backtest avec les mêmes
+règles, et comparés chaque jour à la gestion classique (TP1 / break-even / TP2) sur ton
+historique : si la gestion classique fait mieux, le robot l'utilise à la place (réglable).
+
+**Réactivité et précision** — avec MetaTrader 5, le robot guette l'apparition de la nouvelle
+bougie chez le courtier et analyse ≈ 1 s après la clôture (au lieu d'un délai fixe de 8 s) ;
+les entrées sur repli et les stops suiveurs sont surveillés chaque seconde / toutes les 3 s.
+**Entrée sur repli** (option) : au lieu d'entrer au marché, le robot attend que le prix revienne
+d'une fraction du risque vers le stop (0,3 R par défaut, 3 bougies max) — stop plus court, même
+objectif ; annulée si TP1 ou le stop est touché avant. Rejouée à l'identique dans le backtest et
+soumise à la même comparaison quotidienne que le suivi des gains. **Profils** en un clic :
+Débutant (0,25 %, 3 trades/jour), Équilibré, Actif (scores faibles à risque réduit, 2 positions,
+12 trades/jour), **Tous les signaux** (dès le score 4, risque ÷ 2 sous 7, sans filtre de
+statistiques / tendances / IA, 3 positions, 20 trades/jour, coupe au premier retournement ;
+annonces, spread et perte maximale du jour restent actifs). L'EA a le même mode
+(`InpTakeAllSignals`).
+
+> Le marché Démo a des mèches artificielles qui favorisent à tort l'entrée sur repli : juge-la
+> uniquement sur tes données MetaTrader 5.
+
+**Le robot ne trade pas ?** L'onglet Robot affiche en haut « Pourquoi le robot ne trade pas » :
+robot désactivé, bouton Algo Trading, score sous le minimum du robot, figures perdantes sur
+l'historique, refus des 7 derniers jours par raison… Chaque signal non tradé est noté avec sa
+raison dans l'activité du robot. Le bouton **Tester un ordre** (compte démo) ouvre puis ferme
+le lot minimum pour vérifier que les ordres passent. Les figures sans assez d'historique ne
+sont plus bloquées (seules celles prouvées perdantes le sont — réglable).
+
+**Bouton « Placer »** — sur le signal en direct (radar), sur la notification d'un nouveau signal
+et sur les signaux récents de l'onglet Signaux (moins de 30 min) : un récapitulatif (prix actuel,
+écart depuis le signal, stop, objectifs, lot, montant risqué, contrôles que le robot aurait refusés)
+puis l'ordre part, **même si le robot est désactivé**. Garde-fous conservés : démo sauf autorisation,
+Algo Trading, pause de perte journalière, spread, lot selon le risque, potentiel restant ≥ 0,5 R.
+La position est ensuite gérée comme les autres. EA : `InpAutoTrade = false` → boutons PLACER /
+IGNORER sur le graphique et notification sur le téléphone.
+
+**Encaisser le profit** (Réglages du robot) — *Petit* : objectif unique à 0,6 R (stop suiveur dès
+0,4 R) ; *Moyen* : 1,2 R (stop suiveur dès 0,7 R) ; ou personnalisé. Le trade entier est fermé à
+l'objectif. Plus de trades gagnants, mais des gains plus petits : sur des prix aléatoires,
+l'espérance ne change pas — seul le backtest sur ton historique dit si c'est mieux. EA :
+`InpQuickTargetR`.
+
+**Trades à score faible** (désactivé par défaut) — le robot peut aussi prendre les signaux
+à partir d'un score plus bas (5 par défaut) avec un **risque réduit** (moitié par défaut).
+Tous les autres contrôles s'appliquent quand même, et le backtest pondère ces trades par le
+risque réellement engagé.
+
+**Contrôle qualité avant chaque ordre** — en plus du score de l'analyse, le signal doit passer :
+- **validation statistique** : la figure doit être rentable sur ton propre historique
+  (backtest recalculé chaque jour : ≥ 20 trades, espérance ≥ +0,05 R, profit factor ≥ 1,1), et l'heure ne doit pas être perdante ;
+- **tendances M15 / H1 / H4** : aucune contre le trade, au moins deux dans son sens ;
+- **annonces économiques** : pas d'ordre à ±30 min d'une annonce majeure USD (NFP, CPI, Fed…) ;
+- **volatilité** : ATR M5 entre 10 et 120 pips (1 $ à 12 $) ;
+- **probabilité IA** : voir ci-dessous.
+
+**Intelligence artificielle** — un modèle (gradient boosting, scikit-learn) apprend sur ton
+historique la probabilité qu'un signal soit gagnant, à partir de 25 caractéristiques connues à la
+clôture de la bougie (score, figure, tendances M15/H1/H4, RSI, ADX, volatilité, distance aux EMA,
+élan, position dans le range, potentiel jusqu'à TP2, heure, jour). Validation **chronologique** :
+apprentissage sur les 60 % les plus anciens, seuil choisi sur les 20 % suivants, **mesure finale sur
+les 20 % les plus récents, jamais vus** (avec une zone tampon de 4 h entre les périodes). L'onglet
+Robot affiche le résultat « stratégie seule » contre « avec filtre IA » sur cette période test,
+l'AUC, la fiabilité des probabilités et les caractéristiques qui comptent le plus. Le filtre
+**ne bloque des ordres que s'il a fait mieux que la stratégie seule** sur la période test ; sinon
+la probabilité reste indicative (affichée dans le radar). Réentraîné chaque jour.
+
+> Aucun modèle ne prédit le marché avec certitude : les chiffres affichés sont mesurés, pas promis,
+> et peuvent se dégrader quand le marché change.
+
+Chaque contrôle est expliqué (✓ / ✕) dans l'onglet Robot et enregistré avec chaque ordre.
+
+**Sécurités** : désactivé au lancement · comptes démo uniquement sauf autorisation (« REEL »,
+redemandé à chaque activation) · **pause automatique** après −2 % dans la journée · max 4 trades
+par jour et 1 ouvert à la fois · spread et écart de prix maximums · signal de moins de 3 min ·
+jamais deux fois le même signal · lot plafonné · **arrêt d'urgence** qui clôture toutes ses
+positions (jamais les tiennes, reconnues par le numéro magic 730526) · mode **Simulateur** sans argent.
+
+Identifiants MT5 optionnels dans `.env` (voir `.env.example`), sinon le compte connecté au terminal est utilisé.
+
+---
+
+## Versions autonomes
+
+**Mode autonome de l'application** (onglet Robot → *Mode autonome*) : démarrage avec la session
+sans fenêtre, robot activé et relancé automatiquement, anti-veille Windows, alertes si les données
+n'arrivent plus, bilan du jour. Si tu désactives le robot toi-même, il n'est pas relancé.
+
+**Robot MT5 autonome (Expert Advisor)** — `mql5/Gold_AI_Signal_Bot_EA.mq5`, compilé à chaque
+version (`Gold_AI_Signal_Bot_EA.ex5` dans les fichiers de la release) : la même analyse (12 figures,
+score /10, zones, tendances M15/H1/H4, contrôles volatilité / annonces / spread / limites) et la
+même gestion (lot selon le risque, TP1 + TP2, break-even, stop suiveur, sortie sur retournement,
+entrée sur repli, sortie au temps, pause sur perte journalière) tournent **directement dans
+MetaTrader 5**, sans Python — sur ton PC ou sur le VPS MetaTrader 24 h/24, avec notifications sur
+l'appli MT5 du téléphone. Sans les statistiques par figure ni l'IA. Démo uniquement par défaut.
+Installation : copie le `.ex5` dans *Fichier → Ouvrir le dossier des données → MQL5/Experts*, puis glisse-le sur un graphique XAUUSD M5.
+
+## Ce que contient l'espace
+
+### Analyse
+- **Graphique** chandeliers M5 (600 bougies) avec EMA 20/50/200, zones S/R, flèches des signaux
+  passés (cliquables) et niveaux Entrée / SL / TP1 / TP2 du signal en cours ; **RSI** synchronisé.
+- **Radar** : la dernière bougie clôturée est analysée et notée sur 10, critère par critère
+  (✓ / ✕ avec les points). S'il n'y a pas de signal, il dit **pourquoi** (score trop bas, zone
+  opposée trop proche, stop trop large, hors session…).
+- **Contexte** : tendance H1 et M5, RSI, ADX, volatilité (ATR), session en cours.
+- **Zones clés** classées autour du prix, avec leur solidité (nombre de touches) et la distance en pips.
+
+### Signaux
+Journal de tous les signaux (SQLite) avec **suivi automatique** : en cours, TP2 atteint,
+TP1 puis BE, stop, clôturé au temps — et le résultat en R. Filtres, détail du score, **note
+personnelle** par signal, export CSV.
+
+![Journal](docs/signaux.png)
+
+### Backtest
+Sur 1 500 à 50 000 bougies : réussite, espérance, profit factor, drawdown, série de pertes,
+**courbe de capital**, résultats **par figure**, **par qualité** et **par heure**.
+
+![Backtest](docs/backtest.png)
+
+### Réglages
+Tout se règle dans l'interface (enregistré dans `config.yaml`) : source des données, score
+minimum, filtres, gestion du risque, **figures actives** (désactive celles que le backtest
+montre perdantes), notifications.
+
+---
+
+## Notifications
+
+| Où | Quoi |
+|---|---|
+| **Terminal** | Une ligne de suivi à chaque clôture M5 + un bandeau coloré avec bip à chaque signal |
+| **Navigateur** | Son + notification système + toast (cloche en haut à droite) |
+| **Windows** (option) | Notification bureau même navigateur fermé — `pip install plyer` puis activer dans Réglages |
+
+Exemple dans le terminal :
+
+```
+14:10  XAUUSD 4012.35  H1 ▲  RSI 58  ADX 31  ATR 41.2p  │  ACHAT Avalement haussier 8.5/10
+
+ ▲ ACHAT XAUUSD  ·  qualité A+  ·  score 8.5/10
+  Avalement haussier  —  bougie clôturée 06/11 14:15 UTC
+  Entrée 4012.35   Stop 4007.15 (52.0 pips)   TP1 4020.15 (1:1.5)   TP2 4025.35 (1:2.5)
+    ✓ Figure : Avalement haussier  +3
+    ✓ Dans le sens de la tendance H1  +2
+    ✓ Rejet du support 4006.80 (2 touches)  +2
+    ...
+```
+
+Mode terminal seul (sans navigateur, robot inclus) : `python main.py watch`.
+
+---
+
+## La méthode
+
+À chaque clôture M5 (+8 s pour laisser le courtier publier la bougie) :
+
+**1. Figures de chandeliers** — avalement, pin bar (marteau / étoile filante), étoile du matin /
+du soir, trois soldats / trois corbeaux, pinces (tweezer), cassure d'inside bar. Les
+micro-bougies (< 0,6 ATR) sont ignorées.
+
+**2. Score de confluence /10**
+
+| Critère | Points |
+|---|---|
+| Force de la figure (+1 si plusieurs figures concordent) | 1 à 3 |
+| Sens de la tendance **H1** | +2 (−2 si contre) |
+| EMA 20/50 M5 alignées · bon côté de l'EMA 200 | +1 · +0,5 |
+| Rejet d'une zone S/R (forte si ≥ 2 touches) ou rebond sur les EMA | +1 à +2 |
+| RSI qui confirme (pas en excès) | +1 (−1 si excès) |
+| ADX ≥ 18 | +1 (−1 sinon) |
+| Session Londres (7 h–11 h UTC) / New York (12 h–20 h UTC) | +0,5 |
+
+Qualité : **A+** ≥ 8 · **A** ≥ 7 · **B** ≥ 6 (seuil réglable).
+
+**3. Risque** — stop derrière la mèche + 0,25 ATR (25 à 150 pips, soit 2,50 $ à 15 $), TP1 = 1,5 R, TP2 = 2,5 R ramené
+avant la zone opposée ; setup refusé si une zone bloque à moins de 1,2 R.
+
+Aucune donnée future n'est utilisée (bougies clôturées uniquement, tendance H1 prise à la
+clôture de l'heure) — c'est vérifié par un test automatique.
+
+---
+
+## Sources de données
+
+| Source | Usage |
+|---|---|
+| **MetaTrader 5** (recommandé) | Windows, terminal MT5 ouvert. Règle le **symbole** exact (`XAUUSD`, `XAUUSDm`, `GOLD`…) et le **décalage horaire** du serveur (souvent 2 ou 3) |
+| Yahoo Finance | Gratuit, partout : contrat à terme COMEX **GC=F** (quelques dollars d'écart avec le XAUUSD), 60 jours max — analyse seulement, pas pour placer des ordres |
+| CSV | Ton propre historique (`time,open,high,low,close` en UTC) |
+| Démo | Marché simulé pour découvrir l'interface — **prix non réels** |
+
+`auto` essaie MT5 puis Yahoo.
 
 ## Commandes
 
-| Commande | Rôle |
-|---|---|
-| `doctor` | Terminal MT5, symbole résolu, tick courant, offset UTC, cache |
-| `fetch --days N` | Historique M5 par morceaux → `data/cache/XAUUSD_M5.csv.gz` |
-| `check` | Intégrité des bougies **+ test de look-ahead** sur les features |
-| `signal` | Verdict sur la dernière bougie clôturée, répartition des blocages |
-| `backtest` | Simulation complète avec coûts, t-stat, découpages |
-| `compare` | rules / ml / both sur les mêmes bougies **+ témoin direction au hasard** |
-| `train` | Walk-forward ML, AUC par fold, calibration, sauvegarde du modèle |
-| `tune` | Grille de réglages avec split in-sample/out-of-sample |
-| `live` | Boucle temps réel sur chaque clôture M5 |
-| `paper` | Bilan du suivi papier journalisé |
-| `selftest` | Vérifie que live, backtest et bridge calculent la même chose |
-| `bridge` | Expose MT5 au réseau local (à lancer sur Windows) |
-
-Exemples :
-
 ```bash
-python bot.py backtest --engine both --start 2026-06-01 --export data/trades_both.csv
-python bot.py signal --live --history 10
-python bot.py live            #Ctrl+C pour arrêter
-python bot.py live --once     # pour un cron toutes les 5 minutes
+python main.py                    # espace d'analyse (navigateur + terminal) — ou Gold-AI-Signal-Bot.exe
+python main.py watch              # terminal uniquement
+python main.py scan               # une analyse puis quitte
+python main.py backtest --bars 50000
+python main.py selftest           # vérifie l'installation
+# options : --demo  --source mt5|yfinance|csv  --csv FICHIER  --port 8010  --no-browser  --no-bell
 ```
 
-**Comment le suivi papier est rempli.** Un signal détecté sur la clôture de la
-bougie i n'est pas exécuté au prix de cette clôture : il reste `pending` et se
-remplit a l ouverture de la bougie i+1, exactement comme dans le backtest. SL et
-TP sont calcules autour de ce prix d entree, le SL est prioritaire sur le TP
-quand les deux sont touches dans la meme bougie, un retournement du moteur ferme
-la position, et le plafond de `backtest.max_hold_bars` se compte depuis le
-signal. Le cout est le meme des deux cotes (`backtest.spread_points` + 2 ×
-`slippage_points`). `selftest` rejoue 12 signaux par moteur par le chemin live
-et verifie que les points papier tombent a moins de 0,05 USD du backtest : sans
-cette contrainte, le papier paraitrait toujours plus beau que la simulation.
+API documentée sur `http://localhost:8010/api/docs`.
 
----
+## Structure
 
-## Configuration : les quatre réglages qui comptent
+```
+analyzer/
+  patterns.py    figures de chandeliers
+  indicators.py  EMA, RSI, ATR, ADX, tendance H1
+  structure.py   pivots et zones S/R
+  strategy.py    score de confluence, SL/TP, radar
+  backtest.py    simulation des trades
+  quality.py     contrôle qualité avant ordre (statistiques, M15/H1/H4, annonces, volatilité)
+  ml.py          modèle IA : probabilité de gain, validation walk-forward
+  executor.py    robot : garde-fous, lot, ordres, break-even, stop suiveur, retournement, pause
+  broker.py      courtiers MetaTrader 5 et Simulateur
+  mt5link.py     connexion MT5 persistante, recherche des terminaux installés
+  mt5bridge.py   client du pont MetaTrader 5 (Linux)
+  onboarding.py  assistant de démarrage et diagnostic
+  journal.py     journal SQLite + suivi des résultats
+  service.py     boucle d'analyse
+  server.py      API FastAPI + flux temps réel
+  terminal.py    notifications terminal
+  data.py        MT5 / Yahoo / CSV / démo
+web/             interface (HTML/CSS/JS, graphiques TradingView Lightweight Charts)
+bridge/          serveur du pont MetaTrader 5 (tourne sous Wine, Linux)
+install.sh       installation Linux ; scripts/setup-mt5-wine.sh pour MT5 sous Wine
+packaging/       exécutable (PyInstaller) et installateur Windows (Inno Setup)
+tests/           tests (moteur, anti-lookahead, IA sans fuite de données, API, robot et pont avec faux MT5, assistant)
+```
 
-**1. Le nom du symbole.** Broker « other » = nom différent. Le bot teste la
-liste `symbol.candidates` dans l'ordre et prend le premier tradable. Trouve le
-tien dans MT5 : `Affichage > Liste des symboles`.
+Tests : `pip install -r requirements-dev.txt && python -m pytest -q`
 
-**2. Le point et la taille de contrat** (`broker.point`, `broker.contract_size`).
-Ouvre un graphique XAUUSD, `F1`/Details, « Specification du contrat ». Tout le
-modèle de coût et le dimensionnement en dépendent : faux ici = faux partout.
+Graphiques : [TradingView Lightweight Charts™](https://www.tradingview.com/lightweight-charts/) (Apache 2.0).
 
-**3. Le décalage horaire du serveur** (`mt5.broker_utc_offset_hours`). Les
-horodatages MT5 sont en **heure serveur**, pas en UTC. Mesuré ici : UTC+2,
-vérifié à la seconde près contre un en-tête `Date` HTTP. Le bot le mesure au
-démarrage et convertit tout en UTC. Sans cette correction, le VWAP ancré, la
-fenêtre Londres/New York et le filtre de pré-clôture jouent à l'heure à
-côté. Si la mesure échoue (marché fermé le week-end), le bot rejoue la valeur
-mémorisée dans `data/cache/broker_offset.json`.
+## Publier une nouvelle version
 
-**4. La coupure quotidienne.** Ce broker ne cote **pas entre 21:00 et 23:00
-UTC** (vérifié : heure 22 = 0 bougie). `market.daily_close_utc_hour` pilote le
-filtre `pre_break`, qui interdit un signal dans les 15 minutes précédant :
-sur l'or, ces bougies-là se payent en gap à la réouverture.
-
-Autres clés : `signal.min_score` (68 — à 55 le bot signalait 62 % des bougies,
-du pur bruit), `signal.min_agreeing_components` (4/6),
-`signal.require_directional_backbone` (tendance **ou** volatilité doit suivre,
-sinon les composants de repli produisent un signal en permanence),
-`signal.cooldown_bars` (un signal est un **changement d'état**, pas un état :
-sans ça le même mouvement émet 30 signaux identiques).
-
----
-
-## Pour chercher un edge réel
-
-Dans cet ordre, parce que c'est celui qui coûte le moins cher :
-
-1. **Réduire le nombre de trades avant d'augmenter la précision.** 1 à
-   3 signaux/jour de qualité valent mieux que 14 : le coût est fixe par trade.
-2. **Élargir l'horizon.** Fait et mesuré plus haut : `tp_atr` 2,5 → 12 ramène
-   l'espérance nette hors échantillon de -0,79 à +0,74 pt/trade, sans jamais
-   atteindre la significativité, et en changeant la nature du bot. À re-tester
-   sur des données qui n'ont pas encore servi, pas à acter en l'état.
-3. **Le seul gap qui paie peut-être déjà :** le sens est informé de +0,45
-   pt/trade et le coût est de 0,43 USD. Un broker à 15 points de spread médian
-   au lieu de 33 ferait basculer ce chiffre en net positif sans toucher une
-   ligne de code. C'est l'item à vérifier en premier avec `doctor`.
-4. **Contexte en M15/H1** en plus du M5 : les features actuelles sont toutes
-   calcules sur la meme echelle de temps.
-5. **Un meilleur spread.** Voir item 3 — 33 points sur ce compte demo, et des
-   pointes à 504.
-6. **Filtre de news.** Les pointes de spread à 504 points sont dans les données :
-   un filtre calendrier (CPI, NFP, FOMC) est probablement plus rentable qu'un
-   indicateur de plus.
-7. **Beaucoup plus d'historique** avant de conclure quoi que ce soit sur le
-   consensus : 70 trades, c'est 15 % du minimum pour un t-stat exploitable.
-
----
-
-## Avertissements
-
-- Les signaux sont fournis à titre d'aide à la décision. Le backtest ci-dessus
-  ne démontre pas de rentabilité : il démontre l'inverse, en l'état.
-- Le trading sur marge peut faire perdre plus que le dépôt. Un compte demo
-  d'abord, puis du papier (`live` fait les deux), puis très petit si un jour
-  les statistiques le justifient.
-- `trading.auto_execute` reste à `false` tant que `selftest` n'est pas à 0 échec
-  et que `compare` n'a pas un t-stat supérieur à 1,96 sur un échantillon
-  d'au moins 500 trades.
+```bash
+git tag v2.0.1 && git push origin v2.0.1     # ou : Actions → Installateur Windows → version
+```
+GitHub Actions lance les tests sous Windows, construit l'exécutable, vérifie qu'il démarre
+(`selftest`), crée l'installateur, ajoute l'archive Linux et publie la Release avec le guide PDF.
