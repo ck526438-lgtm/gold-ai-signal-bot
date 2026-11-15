@@ -1290,7 +1290,7 @@
   function renderChat() {
     const box = $("#ai-messages");
     if (!AI.msgs.length) {
-      box.innerHTML = `<div class="ai-empty">Pose une question sur l'or ou choisis une analyse ci-dessus.<br>Claude voit le graphique, les tendances M15/H1/H4, les zones, le dollar, les taux, les annonces et ton historique.</div>`;
+      box.innerHTML = `<div class="ai-empty">Pose une question sur l'or ou choisis une analyse ci-dessus.<br>L'assistant voit le graphique, les tendances M15/H1/H4, les zones, le dollar, les taux, les annonces et ton historique.</div>`;
       return;
     }
     box.innerHTML = AI.msgs.map((m, k) => `<div class="ai-msg ${m.role}${AI.busy && k === AI.msgs.length - 1 && m.role === "assistant" ? " typing" : ""}">${m.role === "user" ? esc(m.content) : md(m.content)}</div>`).join("");
@@ -1300,28 +1300,22 @@
     renderChat();
     try {
       const st = AI.status = await api("/api/assistant");
-      $("#ai-state").textContent = st.configured ? "● connecté" : "○ clé manquante";
-      $("#ai-state").classList.toggle("ok", st.configured);
-      $("#ai-key").placeholder = st.key_hint ? st.key_hint + (st.from_env ? " (variable d'environnement)" : "") : "sk-ant-…";
-      $("#ai-model").innerHTML = st.models.map((m) => `<option value="${m.id}"${m.id === st.model ? " selected" : ""}>${esc(m.label)}</option>`).join("")
-        + (st.models.some((m) => m.id === st.model) ? "" : `<option value="${esc(st.model)}" selected>${esc(st.model)}</option>`);
-      $("#ai-model-label").textContent = st.configured ? st.model : "";
+      $("#ai-model-label").textContent = st.provider === "integre" ? "analyste intégré · gratuit" : "";
       const f = $("#ai-bot-form").elements;
       f.ai_confirm.checked = st.ai_confirm; f.ai_min_confidence.value = st.ai_min_confidence;
       f.ai_block_on_error.checked = st.ai_block_on_error; f.retest_entries.checked = st.retest_entries;
       f.retest_bars.value = st.retest_bars;
     } catch (e) { toast("Assistant indisponible", e.message, "err"); }
   }
-  async function sendChat(text) {
+  async function sendChat(text, intent) {
     text = (text || "").trim();
     if (!text || AI.busy) return;
-    if (AI.status && !AI.status.configured) { toast("Clé API manquante", "Colle ta clé Anthropic dans « Connexion à Claude ».", "err", 6000); return; }
     AI.msgs.push({ role: "user", content: text }, { role: "assistant", content: "" });
     AI.busy = true; $("#ai-send").disabled = true; renderChat();
     const ans = AI.msgs[AI.msgs.length - 1];
     try {
       const r = await fetch("/api/assistant/chat", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: AI.msgs.slice(0, -1).slice(-12) }) });
+        body: JSON.stringify({ messages: AI.msgs.slice(0, -1).slice(-12), intent: intent || null }) });
       if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m; } catch { /* vide */ } throw new Error(m); }
       const reader = r.body.getReader(), dec = new TextDecoder();
       for (;;) {
@@ -1340,28 +1334,16 @@
   }
   $("#ai-form").addEventListener("submit", (e) => { e.preventDefault(); const t = $("#ai-text"); sendChat(t.value); t.value = ""; });
   $("#ai-text").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#ai-form").requestSubmit(); } });
-  $$("#ai-quick .chip").forEach((b) => b.addEventListener("click", () => sendChat(b.dataset.q)));
+  $$("#ai-quick .chip").forEach((b) => b.addEventListener("click", () => sendChat(b.dataset.q, b.dataset.intent)));
   $("#ai-clear").addEventListener("click", () => { if (AI.busy) return; AI.msgs = []; store.set("ai.msgs", []); renderChat(); });
-  $("#ai-key-save").addEventListener("click", async () => {
-    try {
-      const key = $("#ai-key").value.trim();
-      if (key) await api("/api/assistant/key", { method: "PUT", body: JSON.stringify({ key }) });
-      await api("/api/settings", { method: "PUT", body: JSON.stringify({ assistant_model: $("#ai-model").value }) });
-      $("#ai-key").value = ""; toast("Assistant enregistré", "Claude est prêt.", ""); loadAssistant();
-    } catch (e) { toast("Enregistrement impossible", e.message, "err", 7000); }
-  });
-  $("#ai-key-del").addEventListener("click", async () => {
-    try { await api("/api/assistant/key", { method: "PUT", body: JSON.stringify({ key: "" }) }); toast("Clé supprimée", "", ""); loadAssistant(); }
-    catch (e) { toast("Suppression impossible", e.message, "err"); }
-  });
   $("#ai-review").addEventListener("click", async () => {
     const out = $("#ai-review-out"), btn = $("#ai-review");
-    btn.disabled = true; out.innerHTML = `<span class="muted">Claude analyse le dossier…</span>`;
+    btn.disabled = true; out.innerHTML = `<span class="muted">Analyse du dossier…</span>`;
     try {
       const r = await api("/api/assistant/review", { method: "POST", body: "{}" });
       const yes = r.decision === "PLACER";
       out.innerHTML = `<div class="verdict ${yes ? "up" : "down"}">${yes ? "✓ PLACER" : "✕ IGNORER"} · ${r.confidence} %</div>
-        <div class="muted sm">${esc(r.signal.side)} ${esc(r.signal.pattern)} · ${r.signal.score}/10 · entrée ${f5(r.signal.entry)}</div>
+        <div class="muted sm">${esc(r.by)} · ${esc(r.signal.side)} ${esc(r.signal.pattern)} · ${r.signal.score}/10 · entrée ${f5(r.signal.entry)}</div>
         <p>${esc(r.reason)}</p>`;
     } catch (e) { out.innerHTML = `<span class="down">${esc(e.message)}</span>`; }
     finally { btn.disabled = false; }
@@ -1373,7 +1355,7 @@
       ai_block_on_error: f.ai_block_on_error.checked, retest_entries: f.retest_entries.checked, retest_bars: +f.retest_bars.value };
     try {
       await api("/api/trading/settings", { method: "PUT", body: JSON.stringify({ trading }) });
-      toast("Réglages enregistrés", trading.ai_confirm ? "Claude validera chaque trade du robot." : "Validation par Claude désactivée.", "");
+      toast("Réglages enregistrés", trading.ai_confirm ? "L'assistant validera chaque trade du robot." : "Validation par l'assistant désactivée.", "");
       loadAssistant();
     } catch (err) { toast("Enregistrement impossible", err.message, "err", 7000); }
   });

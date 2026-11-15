@@ -17,24 +17,26 @@ Application **Windows** (installateur `.exe`), alertes dans le navigateur, le te
 
 ---
 
-## Nouveautés 2.1 — Claude, le dollar et les setups de l'or
+## Nouveautés 2.2 — assistant IA gratuit, dollar / taux et setups de l'or
 
 ![Assistant IA](docs/assistant.png)
 
-- **Assistant IA (Claude)** — un onglet de chat où tu poses tes questions (« que fait l'or ? »,
-  « pourquoi ce signal ? », « résumé de session », « analyse mon journal »). Claude reçoit à chaque
-  question un **dossier de marché à jour** : prix, tendances M5/H1, M15/H4 du signal, zones S/R,
-  range asiatique, niveaux de la veille, dollar et taux, annonces USD, statistiques de tes figures,
-  derniers signaux et trades du robot. Il cite les niveaux exacts et donne son scénario avec
-  l'invalidation.
-- **Validation des trades par Claude** (option du robot) — quand un signal a passé tous les
-  contrôles, Claude lit le dossier et répond **PLACER** ou **IGNORER** avec une confiance (0–100 %)
-  et sa raison. Le robot ne trade que si Claude confirme au-dessus du seuil (60 % par défaut).
-  Sa justification est enregistrée avec le trade. Bouton « Avis de Claude » pour le radar en manuel.
+- **Assistant IA intégré, gratuit et hors ligne** — aucune clé, aucun abonnement, aucune IA
+  extérieure : l'analyse est calculée sur ton PC à partir des données du bot. Onglet *Assistant IA* :
+  - **Analyse du marché** : biais (tendances H1 / M5, EMA 200, dollar et taux, force ADX), niveaux
+    clés, **scénario** avec zone d'entrée, objectifs, invalidation et rapport gain / risque ;
+  - **Pourquoi ce signal ?** : points solides, points fragiles et son avis ;
+  - **Résumé de session** : range asiatique, cassure ou non, pièges sur le plus haut / plus bas de la veille ;
+  - **Journal** : figures qui gagnent et qui perdent sur ton historique, conseils de réglage ;
+  - **Annonces** : quelles annonces USD arrivent et comment gérer ses trades autour.
+- **Validation des trades par l'assistant** (option du robot) — quand un signal a passé tous les
+  contrôles, l'assistant répond **PLACER** ou **IGNORER** avec une confiance (0–100 %) et sa raison,
+  comme un contrôleur de risque : place jusqu'à la zone opposée, tendance H4, dollar / taux, annonce
+  dans l'heure, figure rentable ou perdante sur ton historique, probabilité IA, volatilité. Le robot ne
+  trade que si la confiance dépasse le seuil (60 % par défaut). Bouton « Demander son avis » pour le radar.
 - **Contexte macro** — tendance H1 de l'**indice du dollar (DXY)** et du **taux US à 10 ans**
-  (MetaTrader 5 si ton courtier les publie, sinon Yahoo `DX-Y.NYB` / `^TNX`). Dollar et taux en baisse :
-  +1 point aux achats d'or, −1 aux ventes (et inversement). Sans donnée future : la bougie H1 n'est
-  utilisée qu'après sa clôture (test automatique).
+  (MetaTrader 5 si ton courtier les publie, sinon Yahoo `DX-Y.NYB` / `^TNX`, gratuit). Dollar et taux
+  en baisse : +1 point aux achats d'or, −1 aux ventes (et inversement). Sans donnée future (test automatique).
 - **Deux setups propres à l'or** :
   - **cassure du range asiatique** (0 h–7 h UTC) entre 7 h et 11 h UTC, range de 0,8 à 8 ATR,
     clôture franche hors du range ;
@@ -44,14 +46,17 @@ Application **Windows** (installateur `.exe`), alertes dans le navigateur, le te
   cassé / balayé** (0,1 ATR avant) au lieu d'entrer au marché : stop identique, entrée plus proche,
   meilleur gain / risque. Annulé si le prix part sans revenir (6 bougies). Le backtest simule la même règle.
 
-Pour activer Claude : crée une clé sur [console.anthropic.com](https://console.anthropic.com)
-(*API Keys*), colle-la dans **Assistant IA → Connexion à Claude**. Elle reste sur ton PC
-(`%LOCALAPPDATA%\Gold AI Signal Bot\data\anthropic_key.txt`, ou variable `ANTHROPIC_API_KEY`).
-Chaque question ou validation est facturée par Anthropic à l'usage (quelques centimes).
+> L'assistant **analyse**, il ne **prédit** pas le prix : il applique des règles de trader aux
+> données du bot. Garde les garde-fous du robot et teste d'abord en Simulateur / démo.
 
-> Claude **analyse** le dossier comme un trader expérimenté, il ne **prédit** pas le prix. La
-> validation réduit les trades douteux mais ne garantit aucun gain : garde les garde-fous et teste
-> d'abord en Simulateur / démo.
+<details><summary>Option avancée : brancher une IA en ligne (facultatif)</summary>
+
+Le moteur sait aussi utiliser une IA en ligne pour les questions libres. Dans `config.yaml` :
+`assistant_provider: groq` (gratuit, clé sur console.groq.com), `gemini`, `ollama` (IA locale) ou
+`claude` (payant), puis enregistre la clé dans `ai_keys.json` du dossier de données ou dans la
+variable d'environnement correspondante (`GROQ_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`).
+Par défaut : `integre`, rien à configurer.
+</details>
 
 ---
 
@@ -232,7 +237,7 @@ score /10, zones, tendances M15/H1/H4, contrôles volatilité / annonces / sprea
 même gestion (lot selon le risque, TP1 + TP2, break-even, stop suiveur, sortie sur retournement,
 entrée sur repli, sortie au temps, pause sur perte journalière) tournent **directement dans
 MetaTrader 5**, sans Python — sur ton PC ou sur le VPS MetaTrader 24 h/24, avec notifications sur
-l'appli MT5 du téléphone. Sans les statistiques par figure, l'IA, Claude, le dollar / taux ni les setups range asiatique et veille (réservés à l'application). Démo uniquement par défaut.
+l'appli MT5 du téléphone. Sans les statistiques par figure, l'IA, l'assistant, le dollar / taux ni les setups range asiatique et veille (réservés à l'application). Démo uniquement par défaut.
 Installation : copie le `.ex5` dans *Fichier → Ouvrir le dossier des données → MQL5/Experts*, puis glisse-le sur un graphique XAUUSD M5.
 
 ## Ce que contient l'espace
@@ -360,7 +365,8 @@ analyzer/
   quality.py     contrôle qualité avant ordre (statistiques, M15/H1/H4, annonces, volatilité)
   ml.py          modèle IA : probabilité de gain, validation walk-forward
   macro.py       dollar (DXY) et taux US 10 ans, sans donnée future
-  assistant.py   Claude : chat, dossier de marché, validation PLACER / IGNORER
+  analyst.py     assistant intégré (gratuit) : analyse, scénario, session, journal, validation PLACER / IGNORER
+  assistant.py   dossier de marché et IA en ligne facultative (Groq, Gemini, Ollama, Claude)
   executor.py    robot : garde-fous, lot, ordres, break-even, stop suiveur, retournement, pause
   broker.py      courtiers MetaTrader 5 et Simulateur
   mt5link.py     connexion MT5 persistante, recherche des terminaux installés

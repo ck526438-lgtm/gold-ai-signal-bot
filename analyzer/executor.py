@@ -124,9 +124,9 @@ class Executor:
         self.listeners: list = []
         self._lock = threading.RLock()
         self._pending: dict[str, dict] = {}     # entrées sur repli en attente
-        self.context_provider = None            # () -> str : dossier de marché pour Claude
         self.data_dir = Path(data_dir)
-        self.ai_reviewer = None                 # remplaçable dans les tests
+        self.ai_reviewer = None                 # (sig, checks) -> {"decision", "confidence", "reason"}
+        self.ai_name = None                     # () -> nom affiché (« Analyste intégré », « Groq »…)
 
     # ------------------------------------------------------------------ outils
     @property
@@ -173,7 +173,7 @@ class Executor:
         "edge": "Figure perdante sur l'historique", "hour": "Heure perdante", "mtf": "Tendances M15/H1/H4",
         "news": "Annonce économique", "vol": "Volatilité", "ml": "Probabilité IA", "account": "Compte / Algo Trading",
         "limits": "Limites (jour, trades ouverts, perte)", "market": "Spread / prix / symbole",
-        "size": "Lot minimum du courtier", "pullback": "Repli / retest non atteint (entrée annulée)", "ai": "Refusé par Claude", "error": "Ordre refusé par le courtier", "autre": "Autre",
+        "size": "Lot minimum du courtier", "pullback": "Repli / retest non atteint (entrée annulée)", "ai": "Refusé par l'assistant IA", "error": "Ordre refusé par le courtier", "autre": "Autre",
     }
 
     def skip_stats(self, days: int = 7) -> list[dict]:
@@ -313,7 +313,7 @@ class Executor:
                 self.quality.last["passed"] = ok
             self._emit({"type": "quality", "report": self.quality.last})
             if not ok:
-                self._skip(sig, f"Claude : {chk['detail']}", "ai")
+                self._skip(sig, f"{chk['label']} : {chk['detail']}", "ai")
                 return []
 
         mg = self.quality.edge.management(self.cfg)
@@ -329,27 +329,24 @@ class Executor:
 
     # ------------------------------------------------------------------ validation Claude
     def _ai_review(self, sig: dict, checks: list) -> tuple[bool, dict]:
-        from .assistant import AssistantError, get_key, review_signal
+        """Avis de l'assistant. `ai_reviewer(sig, checks) -> dict` est fourni par le serveur selon le
+        fournisseur choisi ; sans serveur, l'analyste intégré (règles) répond."""
+        from .analyst import rule_review
+        from .assistant import AssistantError
         from .quality import _chk
 
         t = self.t
-        key = get_key(self.data_dir)
-        if not key:
-            ok = not t.ai_block_on_error
-            return ok, _chk("ai", "Validation Claude", None if ok else False,
-                            "clé API non configurée (onglet Assistant IA)"
-                            + (" — non bloquant" if ok else " — ordre bloqué"))
+        name = self.ai_name() if callable(self.ai_name) else (self.ai_name or "Analyste intégré")
         try:
-            ctx = self.context_provider() if self.context_provider else ""
-            review = (self.ai_reviewer or review_signal)(sig, checks, ctx, key, self.cfg.assistant_model)
+            review = (self.ai_reviewer or (lambda s, c: rule_review(s, c)))(sig, checks)
         except (AssistantError, ValueError, OSError) as e:
             ok = not t.ai_block_on_error
-            return ok, _chk("ai", "Validation Claude", None if ok else False,
+            return ok, _chk("ai", f"Validation {name}", None if ok else False,
                             f"{e}" + (" — non bloquant" if ok else " — ordre bloqué par prudence"))
         ok = review["decision"] == "PLACER" and review["confidence"] >= t.ai_min_confidence
         detail = f"{review['decision']} (confiance {review['confidence']} %, minimum {t.ai_min_confidence}) — {review['reason']}"
-        self._log("ok" if ok else "info", f"Claude sur {sig['side']} {sig['pattern']} : {detail}", notify=True)
-        return ok, _chk("ai", "Validation Claude", ok, detail)
+        self._log("ok" if ok else "info", f"{name} sur {sig['side']} {sig['pattern']} : {detail}", notify=True)
+        return ok, _chk("ai", f"Validation {name}", ok, detail)
 
     # ------------------------------------------------------------------ entrée sur retest
     def _arm_retest(self, sig: dict, checks: list, analysis: str) -> list[dict]:

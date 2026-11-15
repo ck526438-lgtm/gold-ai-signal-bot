@@ -500,3 +500,4 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .gold-ctx .g-row > :last-child { white-space: nowrap; }
 .ai-grid .card .field { margin-bottom: 12px; }
 .ai-grid .card .field .hint { display: block; margin-top: 4px; }
+.ai-list { margin: 6px 0 0; padding-left: 18px; } .ai-list li { margin: 3px 0; }

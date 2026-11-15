@@ -113,9 +113,9 @@ jobs:
             Le robot de trading est **désactivé par défaut** et refuse les comptes réels tant que tu ne l'autorises pas.
             Guide complet : `Guide_Gold_AI_Signal_Bot.pdf`.
 
-            ### Nouveautés 2.1 — Claude, le dollar et les setups de l'or
-            - Onglet **Assistant IA** : chat avec Claude, qui reçoit un dossier de marché complet (tendances, zones, range asiatique, niveaux de la veille, dollar, taux, annonces, ton historique)
-            - **Validation des trades par Claude** (option) : PLACER / IGNORER avec confiance et raison avant chaque ordre du robot
+            ### Nouveautés 2.2 — assistant IA gratuit
+            - Onglet **Assistant IA** intégré, **gratuit et hors ligne** (aucune clé) : analyse du marché avec scénario (entrée, objectifs, invalidation), explication des signaux, résumé de session, analyse du journal, annonces
+            - **Validation des trades par l'assistant** (option) : PLACER / IGNORER avec confiance et raison avant chaque ordre du robot
             - **Contexte macro** : tendance du dollar (DXY) et du taux US 10 ans ajoutée au score
             - Nouveaux setups : **cassure du range asiatique** et **balayage du plus haut / plus bas de la veille**
             - **Entrée sur retest** du niveau cassé (ordre limite) pour ces setups, simulée aussi en backtest

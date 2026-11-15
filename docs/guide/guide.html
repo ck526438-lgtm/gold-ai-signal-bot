@@ -36,7 +36,7 @@
   <h1>Gold AI <span>Signal Bot</span></h1>
   <div class="sub">Analyse et robot de trading de l'or (XAUUSD) en M5 — guide d'utilisation</div>
   <img src="../analyse.png" alt="">
-  <div class="v">Version 2.1 · Windows, Linux · MetaTrader 5</div>
+  <div class="v">Version 2.2 · Windows, Linux · MetaTrader 5</div>
 </section>
 
 <h2>1. À quoi sert l'application</h2>
@@ -138,20 +138,23 @@ positions (numéro magic 730526) · mode Simulateur sans argent.</p>
 <p><b>Débutant</b> (0,25 %, 3 trades/jour), <b>Équilibré</b> (défaut), <b>Actif</b> (scores faibles à risque réduit),
 <b>Tous les signaux</b> (dès le score 4, sans filtres statistiques ni IA ; annonces, spread et perte du jour restent actifs).</p>
 
-<h2>7. Assistant IA (Claude)</h2>
-<figure><img src="../assistant.png" alt=""><figcaption>Sans clé valide, Claude renvoie une erreur claire (ici : clé refusée).</figcaption></figure>
-<ol class="steps">
-  <li>Crée une clé API sur <b>console.anthropic.com</b> → <i>API Keys</i> (paiement à l'usage, quelques centimes par question).</li>
-  <li>Onglet <b>Assistant IA</b> → <i>Connexion à Claude</i> : colle la clé, choisis le modèle (Sonnet recommandé), <b>Enregistrer</b>.</li>
-  <li>Pose ta question ou clique une analyse toute prête : analyse du marché, pourquoi ce signal, résumé de session, analyse du journal, annonces du jour.</li>
-</ol>
-<p>À chaque question, Claude reçoit un dossier à jour : prix, tendances, zones, range asiatique, plus haut / bas de la veille,
-dollar et taux, annonces USD, statistiques de tes figures, derniers signaux et trades. Il ne voit rien d'autre et ne
-« devine » pas le prix : il lit le dossier comme un analyste.</p>
-<h3>Validation des trades par Claude</h3>
-<p>Dans <i>Robot : validation par Claude</i>, active « Claude doit confirmer chaque trade ». Quand un signal a passé tous
-les contrôles, Claude répond <b>PLACER</b> ou <b>IGNORER</b> avec une confiance et sa raison ; le robot ne trade que si
-Claude confirme au-dessus du seuil (60 % par défaut). Si Claude est injoignable, le robot ne trade pas (réglable).</p>
+<h2>7. Assistant IA (gratuit)</h2>
+<figure><img src="../assistant.png" alt=""><figcaption>Résumé de session et avis sur le signal du radar (mode démo).</figcaption></figure>
+<p>L'assistant est <b>intégré, gratuit et hors ligne</b> : aucune clé, aucun abonnement. Il applique des règles de trader
+aux données du bot et rédige ses réponses. Clique une analyse toute prête ou écris ta demande :</p>
+<ul>
+  <li><b>Analyse du marché</b> : biais (tendances, EMA 200, dollar et taux, ADX), niveaux clés, scénario avec zone d'entrée,
+      objectifs, invalidation et rapport gain / risque.</li>
+  <li><b>Pourquoi ce signal ?</b> : ce qui est solide, ce qui est fragile, et son avis PLACER / IGNORER.</li>
+  <li><b>Résumé de session</b> : range asiatique, cassure ou non, pièges sur les niveaux de la veille, suite probable.</li>
+  <li><b>Journal</b> : figures qui gagnent et qui perdent sur ton historique, conseils de réglage.</li>
+  <li><b>Annonces</b> : annonces USD des prochaines 24 h et comment gérer ses positions autour.</li>
+</ul>
+<h3>Validation des trades par l'assistant</h3>
+<p>Dans <i>Robot : validation par l'assistant</i>, active « L'assistant doit confirmer chaque trade ». Quand un signal a passé
+tous les contrôles, il répond <b>PLACER</b> ou <b>IGNORER</b> avec une confiance et sa raison (place jusqu'à la zone opposée,
+tendance H4, dollar / taux, annonce dans l'heure, historique de la figure, probabilité IA, volatilité). Le robot ne trade que si
+la confiance dépasse le seuil (60 % par défaut). Sa raison est enregistrée avec le trade.</p>
 <h3>Nouveaux setups et entrée sur retest</h3>
 <ul>
   <li><b>Cassure du range asiatique</b> : range de 0 h à 7 h UTC, cassure franche entre 7 h et 11 h UTC.</li>
@@ -163,7 +166,7 @@ Claude confirme au-dessus du seuil (60 % par défaut). Si Claude est injoignable
 
 <h2>8. Robot autonome dans MetaTrader 5 (EA)</h2>
 <p>Le fichier <code>Gold_AI_Signal_Bot_EA.ex5</code> (dans la Release) applique l'analyse des chandeliers et la même gestion
-directement dans MetaTrader 5, sans Python : sur ton PC ou un VPS MetaTrader 24 h/24. Il n'inclut pas Claude, le dollar
+directement dans MetaTrader 5, sans Python : sur ton PC ou un VPS MetaTrader 24 h/24. Il n'inclut pas l'assistant IA, le dollar
 et les taux, ni les setups du range asiatique et de la veille : ces fonctions demandent l'application.</p>
 <ol class="steps">
   <li>MT5 → <i>Fichier → Ouvrir le dossier des données</i> → <code>MQL5\Experts</code> : copie le fichier <code>.ex5</code>.</li>
@@ -189,7 +192,6 @@ et les taux, ni les setups du range asiatique et de la veille : ces fonctions de
   <tr><td>Le robot ne trade pas</td><td>Lis l'encadré « Pourquoi le robot ne trade pas » de l'onglet Robot ; utilise « Tester un ordre » sur un compte démo.</td></tr>
   <tr><td>« spread trop élevé »</td><td>Normal à l'ouverture asiatique et autour des annonces. Ne monte pas le maximum au-delà de 8–10 pips.</td></tr>
   <tr><td>La page ne s'ouvre pas</td><td>Ouvre <code>http://localhost:8010</code> à la main ; vérifie que la fenêtre noire est ouverte.</td></tr>
-  <tr><td>Claude : « clé API refusée » / « crédit épuisé »</td><td>Vérifie la clé et le solde sur console.anthropic.com, puis réenregistre-la dans l'onglet Assistant IA.</td></tr>
   <tr><td>« Dollar et taux indisponibles »</td><td>Ton courtier ne publie pas l'indice et Yahoo est injoignable : l'analyse continue sans le critère macro.</td></tr>
   <tr><td>Tout vérifier</td><td>Réglages → État du système : chaque point indique quoi corriger.</td></tr>
 </table>

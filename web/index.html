@@ -103,7 +103,7 @@
 
         <div class="card">
           <div class="card-head"><h3>Dollar, taux et niveaux de l'or</h3>
-            <button class="link" data-goto="assistant">Demander à Claude</button></div>
+            <button class="link" data-goto="assistant">Demander à l'assistant</button></div>
           <div id="gold-ctx" class="gold-ctx"></div>
         </div>
 
@@ -378,49 +378,51 @@
   <section class="view" id="view-assistant">
     <div class="ai-grid">
       <div class="card ai-chat">
-        <div class="card-head"><h3>Claude — analyste de l'or</h3>
+        <div class="card-head"><h3>Assistant IA — analyste de l'or</h3>
           <span class="muted sm" id="ai-model-label"></span>
           <button class="btn ghost sm" id="ai-clear" type="button">Nouvelle conversation</button></div>
         <div class="ai-quick" id="ai-quick">
-          <button class="chip" data-q="Fais-moi l'analyse complète de l'or maintenant : tendance, niveaux clés, contexte dollar/taux, annonces, et le scénario que tu privilégies avec son invalidation.">Analyse du marché</button>
-          <button class="chip" data-q="Explique-moi le signal du radar : pourquoi ce score, ce qui est solide, ce qui est fragile. Tu le prendrais ?">Pourquoi ce signal ?</button>
-          <button class="chip" data-q="Fais le point de la session en cours : ce qui s'est passé depuis l'ouverture (range asiatique, cassures, niveaux de la veille) et à quoi faire attention pour la suite.">Résumé de session</button>
-          <button class="chip" data-q="Analyse mes derniers signaux et trades du robot : ce qui marche, ce qui perd, et ce que tu changerais dans les réglages.">Analyse de mon journal</button>
-          <button class="chip" data-q="Y a-t-il des annonces qui peuvent faire bouger l'or aujourd'hui ? Comment je devrais gérer mes trades autour ?">Annonces du jour</button>
+          <button class="chip" data-q="Fais-moi l'analyse complète de l'or maintenant : tendance, niveaux clés, contexte dollar/taux, annonces, et le scénario que tu privilégies avec son invalidation." data-intent="marche">Analyse du marché</button>
+          <button class="chip" data-q="Explique-moi le signal du radar : pourquoi ce score, ce qui est solide, ce qui est fragile. Tu le prendrais ?" data-intent="signal">Pourquoi ce signal ?</button>
+          <button class="chip" data-q="Fais le point de la session en cours : ce qui s'est passé depuis l'ouverture (range asiatique, cassures, niveaux de la veille) et à quoi faire attention pour la suite." data-intent="session">Résumé de session</button>
+          <button class="chip" data-q="Analyse mes derniers signaux et trades du robot : ce qui marche, ce qui perd, et ce que tu changerais dans les réglages." data-intent="journal">Analyse de mon journal</button>
+          <button class="chip" data-q="Y a-t-il des annonces qui peuvent faire bouger l'or aujourd'hui ? Comment je devrais gérer mes trades autour ?" data-intent="annonces">Annonces du jour</button>
         </div>
         <div class="ai-messages" id="ai-messages"></div>
         <form class="ai-input" id="ai-form">
-          <textarea id="ai-text" rows="2" placeholder="Pose ta question sur l'or… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne)"></textarea>
+          <textarea id="ai-text" rows="2" placeholder="Ex. : « analyse le marché », « pourquoi ce signal ? », « résumé de la session », « mon journal », « annonces »… (Entrée pour envoyer)"></textarea>
           <button class="btn primary" id="ai-send" type="submit">Envoyer</button>
         </form>
       </div>
 
       <aside class="col-side">
         <div class="card">
-          <div class="card-head"><h3>Connexion à Claude</h3><span class="pill-state" id="ai-state"></span></div>
-          <div class="field"><label>Clé API Anthropic</label>
-            <input id="ai-key" type="password" autocomplete="off" placeholder="sk-ant-…">
-            <span class="hint muted sm">Crée-la sur <b>console.anthropic.com</b> → API Keys. Elle reste sur ton PC (dossier de données) et n'est jamais affichée.</span></div>
-          <div class="field"><label>Modèle</label><select id="ai-model"></select></div>
-          <div class="row-btns">
-            <button class="btn primary sm" id="ai-key-save" type="button">Enregistrer</button>
-            <button class="btn ghost sm" id="ai-key-del" type="button">Supprimer la clé</button>
-          </div>
+          <div class="card-head"><h3>Analyste intégré</h3><span class="pill-state ok">● gratuit · hors ligne</span></div>
+          <p class="muted sm">Aucune clé, aucun abonnement, aucune connexion à une IA extérieure : l'analyse est calculée
+            sur ton PC à partir des données du bot (tendances M5/H1/H4, zones, range asiatique, veille, dollar, taux,
+            annonces, statistiques de tes figures, journal).</p>
+          <ul class="muted sm ai-list">
+            <li><b>Analyse du marché</b> : biais, niveaux clés, scénario avec entrée, objectifs et invalidation</li>
+            <li><b>Pourquoi ce signal ?</b> : points solides, points fragiles et son avis</li>
+            <li><b>Résumé de session</b> : range asiatique, cassures, pièges sur les niveaux de la veille</li>
+            <li><b>Journal</b> : figures qui gagnent, figures qui perdent, conseils de réglage</li>
+            <li><b>Annonces</b> : quoi éviter et quand</li>
+          </ul>
         </div>
 
         <div class="card">
-          <div class="card-head"><h3>Avis de Claude sur le radar</h3></div>
-          <p class="muted sm">Claude reçoit le signal, les contrôles qualité et tout le contexte, et répond PLACER ou IGNORER.</p>
+          <div class="card-head"><h3>Avis sur le signal du radar</h3></div>
+          <p class="muted sm">L'assistant reçoit le signal, les contrôles qualité et tout le contexte, et répond PLACER ou IGNORER.</p>
           <button class="btn sm" id="ai-review" type="button">Demander son avis</button>
           <div id="ai-review-out" class="ai-review"></div>
         </div>
 
         <form class="card" id="ai-bot-form">
-          <div class="card-head"><h3>Robot : validation par Claude</h3></div>
-          <div class="field"><label class="switch"><input type="checkbox" name="ai_confirm"><span></span>Claude doit confirmer chaque trade</label>
-            <span class="hint muted sm">Dernier filtre, après les contrôles automatiques. Un appel à l'API par signal (quelques centimes).</span></div>
-          <div class="field"><label>Confiance minimale de Claude (%)</label><input name="ai_min_confidence" type="number" min="0" max="100" step="5"></div>
-          <div class="field"><label class="switch"><input type="checkbox" name="ai_block_on_error"><span></span>Ne pas trader si Claude est injoignable</label></div>
+          <div class="card-head"><h3>Robot : validation par l'assistant</h3></div>
+          <div class="field"><label class="switch"><input type="checkbox" name="ai_confirm"><span></span>L'assistant doit confirmer chaque trade</label>
+            <span class="hint muted sm">Dernier filtre, après les contrôles automatiques : place jusqu'à l'objectif, tendance H4, dollar / taux, annonces, historique de la figure. Gratuit et instantané.</span></div>
+          <div class="field"><label>Confiance minimale (%)</label><input name="ai_min_confidence" type="number" min="0" max="100" step="5"></div>
+          <div class="field"><label class="switch"><input type="checkbox" name="ai_block_on_error"><span></span>Ne pas trader si l'analyse échoue</label></div>
           <div class="field"><label class="switch"><input type="checkbox" name="retest_entries"><span></span>Cassures et balayages : entrée sur retest du niveau</label>
             <span class="hint muted sm">Ordre placé au niveau cassé (range asiatique, plus haut / bas de la veille) : stop plus proche, meilleur gain / risque. Annulé si le prix part sans revenir.</span></div>
           <div class="field"><label>Validité du retest (bougies M5)</label><input name="retest_bars" type="number" min="1" max="24"></div>
@@ -429,7 +431,7 @@
       </aside>
     </div>
     <div class="box-warn">
-      <b>Claude analyse, il ne prédit pas.</b> Il lit les mêmes données que toi (prix, tendances, zones, dollar, taux, annonces, ton historique) et peut se tromper. Garde les garde-fous du robot et teste en Simulateur / démo avant le réel.
+      <b>L'assistant analyse, il ne prédit pas.</b> Il lit les mêmes données que toi (prix, tendances, zones, dollar, taux, annonces, ton historique) et peut se tromper. Garde les garde-fous du robot et teste en Simulateur / démo avant le réel.
     </div>
   </section>
 

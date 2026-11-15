@@ -100,9 +100,9 @@ class TradingConfig:
     # --- intelligence artificielle (voir analyzer/ml.py)
     quality_ml: bool = True            # probabilité de gain estimée par le modèle entraîné
     # --- validation par Claude (onglet Assistant IA) et entrées de précision
-    ai_confirm: bool = False           # Claude doit confirmer chaque trade avant envoi (clé API requise)
-    ai_min_confidence: int = 60        # confiance minimale de Claude (0–100)
-    ai_block_on_error: bool = True     # Claude injoignable : ne pas trader (True) ou ignorer
+    ai_confirm: bool = False           # l'assistant (intégré, Groq, Gemini, Ollama ou Claude) confirme chaque trade
+    ai_min_confidence: int = 60        # confiance minimale (0–100)
+    ai_block_on_error: bool = True     # IA injoignable : ne pas trader (True) ou ignorer
     retest_entries: bool = True        # cassures / balayages : entrée sur retest du niveau (ordre limite)
     retest_bars: int = 6               # validité du retest (bougies M5)
     ml_min_proba: float = 0.0          # 0 = seuil automatique choisi en validation, sinon 0,30–0,90
@@ -120,7 +120,9 @@ class Config:
     broker_utc_offset: int = 0
     pip: float = 0.1                # XAUUSD : 1 pip = 0,10 $ (10 points de 0,01)
     desktop_notifications: bool = False
-    assistant_model: str = "claude-sonnet-5-5"   # modèle Claude de l'onglet Assistant IA
+    assistant_provider: str = "integre"   # integre (gratuit) | groq | gemini | ollama | claude
+    assistant_model: str = ""             # vide = modèle par défaut du fournisseur
+    assistant_ollama_url: str = "http://localhost:11434/v1"
     data_dir: str = "data"
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     trading: TradingConfig = field(default_factory=TradingConfig)
@@ -130,7 +132,8 @@ class Config:
 
 
 EDITABLE_ROOT = {"symbol", "source", "csv_path", "bars", "broker_utc_offset", "desktop_notifications",
-                 "mt5_path", "mt5_bridge", "setup_done", "assistant_model"}
+                 "mt5_path", "mt5_bridge", "setup_done", "assistant_model",
+                 "assistant_provider", "assistant_ollama_url"}
 
 
 def _apply(cfg: Config, raw: dict) -> Config:
@@ -195,8 +198,13 @@ def validate(cfg: Config) -> None:
     a, b = s.asian_range_utc
     if not 0 <= a < b <= s.breakout_until_utc <= 24:
         raise ValueError("Range asiatique : heures invalides (début < fin ≤ limite de cassure)")
-    if not str(cfg.assistant_model).startswith("claude-"):
-        raise ValueError("Modèle de l'assistant : un nom de modèle Claude (claude-…)")
+    if cfg.assistant_provider not in ("integre", "groq", "gemini", "ollama", "claude"):
+        raise ValueError("Assistant : fournisseur inconnu")
+    m = str(cfg.assistant_model or "")
+    if len(m) > 120 or any(ch.isspace() for ch in m):
+        raise ValueError("Assistant : nom de modèle invalide")
+    if not str(cfg.assistant_ollama_url).startswith(("http://", "https://")):
+        raise ValueError("Adresse d'Ollama invalide (ex. http://localhost:11434/v1)")
     t = cfg.trading
     if t.mode not in ("mt5", "paper"):
         raise ValueError("Mode du robot inconnu")

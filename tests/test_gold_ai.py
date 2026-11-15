@@ -127,47 +127,125 @@ def test_retest_entry_waits_for_level(bot):
     assert fake.requests and all(abs(r["price"] - level) < 1e-6 for r in fake.requests)
 
 
-def test_claude_blocks_or_confirms(bot, tmp_path):
+def test_ai_validation_blocks_or_confirms(bot):
     ex, fake = bot(ai_confirm=True, ai_min_confidence=60, trailing=False, retest_entries=False)
-    # pas de clé : bloqué par prudence
-    assert ex.on_signal(make_sig()) == [] and not fake.requests
-    assert any(s["code"] == "ai" for s in ex.skip_stats())
-    assistant.set_key(tmp_path, "sk-ant-test-1234")
     seen = {}
 
-    def reviewer(sig, checks, ctx, key, model):
-        seen.update(key=key, model=model, ctx=ctx)
+    def reviewer(sig, checks):
+        seen.update(pattern=sig["pattern"], n=len(checks))
         return {"decision": "IGNORER", "confidence": 80, "reason": "zone opposée trop proche"}
-    ex.ai_reviewer = reviewer
-    ex.context_provider = lambda: "DOSSIER"
+    ex.ai_reviewer, ex.ai_name = reviewer, (lambda: "Groq")
     assert ex.on_signal(make_sig(key="K1")) == [] and not fake.requests
-    assert seen == {"key": "sk-ant-test-1234", "model": "claude-sonnet-5-5", "ctx": "DOSSIER"}
+    assert seen["pattern"] == "Avalement" and seen["n"] >= 1
+    assert any(s["code"] == "ai" for s in ex.skip_stats())
     ex.ai_reviewer = lambda *a: {"decision": "PLACER", "confidence": 55, "reason": "moyen"}
     assert ex.on_signal(make_sig(key="K2")) == []                    # confiance trop basse
     ex.ai_reviewer = lambda *a: {"decision": "PLACER", "confidence": 75, "reason": "structure propre"}
     done = ex.on_signal(make_sig(key="K3"))
     assert done and fake.requests
     checks = json.loads(ex.store.q("SELECT analysis FROM trades WHERE key='K3' LIMIT 1")[0]["analysis"])
-    assert checks[-1]["id"] == "ai" and checks[-1]["status"] == "ok"
+    assert checks[-1]["id"] == "ai" and checks[-1]["status"] == "ok" and checks[-1]["label"] == "Validation Groq"
 
 
-def test_claude_error_policy(bot, tmp_path):
+def test_ai_default_is_free_rule_review(bot):
+    ex, fake = bot(ai_confirm=True, ai_min_confidence=50, trailing=False, retest_entries=False)
+    good = dict(make_sig(key="G1", score=8.5), mtf={"m15": 1, "h1": 1, "h4": 1}, macro=1)
+    assert ex.on_signal(good) and fake.requests                      # analyste intégré : aucune clé
+    bad = dict(make_sig(key="B1", score=6.5), mtf={"m15": 1, "h1": 1, "h4": -1}, macro=-1)
+    n = len(fake.requests)
+    ex.store.x("UPDATE trades SET status='fermé'")
+    assert ex.on_signal(bad) == [] and len(fake.requests) == n
+
+
+def test_ai_error_policy(bot):
     ex, fake = bot(ai_confirm=True, ai_block_on_error=False, retest_entries=False)
-    assistant.set_key(tmp_path, "sk-ant-x")
 
     def boom(*a):
-        raise assistant.AssistantError("Claude injoignable")
+        raise assistant.AssistantError("Groq injoignable")
     ex.ai_reviewer = boom
     assert ex.on_signal(make_sig()) and fake.requests                # non bloquant si demandé
+    ex2, fake2 = bot(ai_confirm=True, ai_block_on_error=True, retest_entries=False)
+    ex2.ai_reviewer = boom
+    assert ex2.on_signal(make_sig(key="X")) == [] and not fake2.requests
+
+
+# ------------------------------------------------------------------ analyste intégré
+def test_rule_review_logic():
+    from analyzer.analyst import rule_review
+    base = dict(make_sig(score=8), mtf={"m15": 1, "h1": 1, "h4": 1}, macro=1, atr_pips=40)
+    good = rule_review(base, [])
+    assert good["decision"] == "PLACER" and good["confidence"] >= 70
+    snap = {"zones": [{"price": base["entry"] + 0.5, "touches": 3, "kind": "resistance"}]}   # 0,6 R
+    blocked = rule_review(dict(base, score=7, macro=0), [], snap)
+    assert blocked["decision"] == "IGNORER" and "zone opposée" in blocked["reason"]
+    from datetime import datetime, timedelta, timezone
+    soon = (datetime.now(timezone.utc) + timedelta(minutes=20)).isoformat()
+    news = rule_review(dict(base, score=7, macro=0, mtf={}), [], None, {"news": [{"time": soon, "title": "NFP"}]})
+    assert news["confidence"] < good["confidence"] and "NFP" in news["reason"]
+
+
+# ------------------------------------------------------------------ fournisseurs compatibles OpenAI
+class _Resp:
+    def __init__(self, lines):
+        self.lines = lines
+
+    def __iter__(self):
+        return iter(self.lines)
+
+    def read(self):
+        return b"".join(self.lines)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def test_openai_compatible_stream_and_models(monkeypatch):
+    calls = []
+
+    def fake_urlopen(req, timeout=None, context=None):
+        calls.append((req.full_url, dict(req.header_items()), req.data))
+        if req.full_url.endswith("/models"):
+            return _Resp([json.dumps({"data": [{"id": "llama-3.3-70b-versatile"}, {"id": "whisper-large-v3"},
+                                               {"id": "models/gemini-2.5-flash"}]}).encode()])
+        chunks = [{"choices": [{"delta": {"content": "Or "}}]}, {"choices": [{"delta": {"content": "haussier"}}]}]
+        return _Resp([f"data: {json.dumps(c)}\n".encode() for c in chunks] + [b"data: [DONE]\n"])
+    monkeypatch.setattr(assistant.urllib.request, "urlopen", fake_urlopen)
+    out = "".join(assistant.stream("groq", "gsk_test", "llama-3.3-70b-versatile", "SYS",
+                                   [{"role": "user", "content": "q"}]))
+    assert out == "Or haussier"
+    url, headers, data = calls[-1]
+    body = json.loads(data)
+    assert url == "https://api.groq.com/openai/v1/chat/completions" and headers["Authorization"] == "Bearer gsk_test"
+    assert body["messages"][0] == {"role": "system", "content": "SYS"} and body["stream"] is True
+    assert assistant.list_models("groq", "gsk_test") == ["gemini-2.5-flash", "llama-3.3-70b-versatile"]
+    assistant.list_models("ollama", None, "http://localhost:11434/v1")
+    assert calls[-1][0] == "http://localhost:11434/v1/models" and "Authorization" not in calls[-1][1]
+    assert assistant.model_for("groq", "claude-sonnet-5-5") == "llama-3.3-70b-versatile"
+    assert assistant.model_for("claude", "") == "claude-sonnet-5-5"
 
 
 # ------------------------------------------------------------------ assistant
 def test_assistant_helpers(tmp_path):
     with pytest.raises(ValueError):
-        assistant.set_key(tmp_path, "abc")
-    assistant.set_key(tmp_path, "sk-ant-abcdef9876")
-    st = assistant.status(tmp_path, "claude-sonnet-5-5")
-    assert st["configured"] and st["key_hint"].endswith("9876") and "abcdef" not in json.dumps(st)
+        assistant.set_key(tmp_path, "abc", "claude")
+    with pytest.raises(ValueError):
+        assistant.set_key(tmp_path, "sk-ant-xxxxxxxxxxxx", "groq")
+    with pytest.raises(ValueError):
+        assistant.set_key(tmp_path, "x" * 20, "integre")
+    assistant.set_key(tmp_path, "sk-ant-abcdef9876", "claude")
+    assistant.set_key(tmp_path, "gsk_abcdefghij1234", "groq")
+    st = assistant.status(tmp_path, "groq", "")
+    assert st["configured"] and st["key_hint"].endswith("1234") and "abcdefghij" not in json.dumps(st)
+    assert {p["id"]: p["configured"] for p in st["providers"]} == \
+        {"integre": True, "groq": True, "gemini": False, "ollama": True, "claude": True}
+    assistant.set_key(tmp_path, "", "groq")
+    assert not assistant.get_key(tmp_path, "groq") and assistant.get_key(tmp_path, "claude")
+    (tmp_path / "anthropic_key.txt").write_text("sk-ant-old11112222")     # clé de la v2.1.0
+    (tmp_path / "ai_keys.json").unlink()
+    assert assistant.get_key(tmp_path, "claude") == "sk-ant-old11112222"
     h = assistant.clean_history([{"role": "assistant", "content": "x"}, {"role": "user", "content": "a"},
                                  {"role": "user", "content": "b"}])
     assert h == [{"role": "user", "content": "a\n\nb"}]
@@ -195,33 +273,50 @@ def test_state_has_gold_context(client):
     assert "Range asiatique" in ctx and "Dollar (DXY)" in ctx and "Prix" in ctx
 
 
-def test_assistant_api(client, monkeypatch):
-    assert not client.get("/api/assistant").json()["configured"]
+def test_assistant_free_by_default(client):
+    st = client.get("/api/assistant").json()
+    assert st["provider"] == "integre" and st["configured"] and not st["needs_key"]
+    for intent, mark in [("marche", "### Scénario"), ("session", "### Session"), ("journal", "### Journal"),
+                         ("annonces", "annonce"), ("signal", "")]:
+        r = client.post("/api/assistant/chat", json={"messages": [{"role": "user", "content": "x"}], "intent": intent})
+        assert r.status_code == 200 and mark.lower() in r.text.lower() and len(r.text) > 40, intent
+    r = client.post("/api/assistant/chat", json={"messages": [{"role": "user", "content": "Analyse mes derniers signaux"}]})
+    assert "### Journal" in r.text
+    rv = client.post("/api/assistant/review", json={})
+    if rv.status_code == 200:
+        assert rv.json()["decision"] in ("PLACER", "IGNORER") and rv.json()["by"] == "Analyste intégré"
+
+
+def test_assistant_online_providers(client, monkeypatch):
+    assert client.put("/api/settings", json={"assistant_provider": "groq"}).status_code == 200
     r = client.post("/api/assistant/chat", json={"messages": [{"role": "user", "content": "Analyse"}]})
-    assert r.status_code == 400 and "Clé API" in r.json()["detail"]
-    assert client.put("/api/assistant/key", json={"key": "pas-une-cle"}).status_code == 400
-    st = client.put("/api/assistant/key", json={"key": "sk-ant-zzzz1111"}).json()
-    assert st["configured"] and st["key_hint"].endswith("1111")
+    assert r.status_code == 400 and "clé API Groq" in r.json()["detail"]
+    assert client.put("/api/assistant/key", json={"key": "pas-une-cle", "provider": "groq"}).status_code == 400
+    st = client.put("/api/assistant/key", json={"key": "gsk_zzzzzzzz1111", "provider": "groq"}).json()
+    assert st["configured"] and st["key_hint"].endswith("1111") and st["model"] == "llama-3.3-70b-versatile"
 
     sent = {}
 
-    def fake_stream(key, model, system, messages, **kw):
-        sent.update(key=key, model=model, messages=messages)
+    def fake_stream(provider, key, model, system, messages, **kw):
+        sent.update(provider=provider, key=key, model=model, messages=messages)
         yield "L'or est "
         yield "**haussier**."
     monkeypatch.setattr(assistant, "stream", fake_stream)
     r = client.post("/api/assistant/chat", json={"messages": [{"role": "user", "content": "Analyse"}]})
     assert r.status_code == 200 and r.text == "L'or est **haussier**."
-    assert sent["key"] == "sk-ant-zzzz1111" and "<dossier_marche>" in sent["messages"][-1]["content"]
+    assert sent["provider"] == "groq" and sent["key"] == "gsk_zzzzzzzz1111"
+    assert "<dossier_marche>" in sent["messages"][-1]["content"]
 
     monkeypatch.setattr(assistant, "complete",
                         lambda *a, **k: '{"decision": "IGNORER", "confiance": 70, "raison": "macro contraire"}')
     r = client.post("/api/assistant/review", json={})
     assert r.status_code in (200, 404)
     if r.status_code == 200:
-        assert r.json()["decision"] == "IGNORER" and r.json()["checks"]
+        assert r.json()["decision"] == "IGNORER" and r.json()["by"] == "Groq"
 
-    assert client.put("/api/settings", json={"assistant_model": "gpt-4"}).status_code == 400
-    assert client.put("/api/settings", json={"assistant_model": "claude-haiku-5-5"}).status_code == 200
-    assert client.get("/api/assistant").json()["model"] == "claude-haiku-5-5"
-    assert client.put("/api/assistant/key", json={"key": ""}).json()["configured"] is False
+    assert client.put("/api/settings", json={"assistant_provider": "chatgpt"}).status_code == 400
+    assert client.put("/api/settings", json={"assistant_provider": "ollama", "assistant_model": "qwen2.5:7b"}).status_code == 200
+    st = client.get("/api/assistant").json()
+    assert st["provider"] == "ollama" and st["configured"] and st["model"] == "qwen2.5:7b"
+    m = client.get("/api/assistant/models").json()                       # Ollama non lancé ici
+    assert m["provider"] == "ollama" and (m["models"] or m["error"])

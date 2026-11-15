@@ -1,11 +1,17 @@
-"""Assistant IA (Claude) : chat sur le marché de l'or et validation des trades avant envoi.
+"""Assistant IA : chat sur le marché de l'or et validation des trades avant envoi.
 
-Claude ne voit QUE les données préparées par l'application (prix, tendances, zones, macro,
-annonces, statistiques de ton historique, journal, robot). Il n'a pas accès à Internet et ne
-« prédit » pas le marché : il lit le dossier comme le ferait un analyste et donne son avis.
+Plusieurs « cerveaux » au choix (onglet Assistant IA) :
+* integre — analyste par règles, GRATUIT, hors ligne, sans clé (par défaut) ;
+* groq    — IA en ligne gratuite (console.groq.com, sans carte : au-delà du quota, refus, pas de facture) ;
+* gemini  — Google Gemini, clé gratuite sur aistudio.google.com (quotas limités) ;
+* ollama  — IA locale sur le PC (ollama.com), gratuite et hors ligne ;
+* claude  — Claude (Anthropic), payant à l'usage.
 
-Clé API : variable d'environnement ANTHROPIC_API_KEY, sinon fichier `anthropic_key.txt` dans le
-dossier de données (enregistré depuis l'onglet Assistant IA, jamais renvoyé à l'interface).
+L'IA ne voit QUE le dossier préparé par l'application (prix, tendances, zones, macro, annonces,
+statistiques, journal, robot). Elle ne « prédit » pas le marché : elle lit le dossier et donne un avis.
+
+Clés : variables d'environnement (GROQ_API_KEY, GEMINI_API_KEY, ANTHROPIC_API_KEY) ou fichier
+`ai_keys.json` du dossier de données (enregistré depuis l'interface, jamais renvoyé).
 """
 from __future__ import annotations
 
@@ -24,12 +30,39 @@ log = logging.getLogger(__name__)
 
 API_URL = "https://api.anthropic.com/v1/messages"
 API_VERSION = "2023-06-01"
+PROVIDERS = {
+    "integre": {"label": "Analyste intégré — gratuit, hors ligne, sans clé", "kind": "local", "key": False,
+                "default_model": "", "signup": None},
+    "groq": {"label": "Groq — IA en ligne gratuite (clé gratuite, sans carte)", "kind": "openai", "key": True,
+             "base": "https://api.groq.com/openai/v1", "default_model": "llama-3.3-70b-versatile",
+             "signup": "https://console.groq.com/keys", "env": ("GROQ_API_KEY",)},
+    "gemini": {"label": "Google Gemini — clé gratuite (quotas limités)", "kind": "openai", "key": True,
+               "base": "https://generativelanguage.googleapis.com/v1beta/openai", "default_model": "gemini-2.5-flash",
+               "signup": "https://aistudio.google.com/apikey", "env": ("GEMINI_API_KEY", "GOOGLE_API_KEY")},
+    "ollama": {"label": "Ollama — IA locale sur ton PC, gratuite", "kind": "openai", "key": False,
+               "base": "http://localhost:11434/v1", "default_model": "llama3.1:8b",
+               "signup": "https://ollama.com/download"},
+    "claude": {"label": "Claude (Anthropic) — payant à l'usage", "kind": "anthropic", "key": True,
+               "default_model": "claude-sonnet-5-5", "signup": "https://console.anthropic.com/settings/keys",
+               "env": ("ANTHROPIC_API_KEY",)},
+}
 MODELS = [
     {"id": "claude-sonnet-5-5", "label": "Claude Sonnet 5.5 — équilibré (recommandé)"},
     {"id": "claude-opus-5-5", "label": "Claude Opus 5.5 — le plus fin, plus lent et plus cher"},
     {"id": "claude-haiku-5-5", "label": "Claude Haiku 5.5 — rapide et économique"},
 ]
-KEY_FILE = "anthropic_key.txt"
+KEY_FILE = "ai_keys.json"
+OLD_KEY_FILE = "anthropic_key.txt"
+
+
+def model_for(provider: str, model: str | None) -> str:
+    """Modèle choisi, sinon celui par défaut du fournisseur (un modèle Claude n'est pas envoyé à Groq…)."""
+    p = PROVIDERS.get(provider, PROVIDERS["integre"])
+    m = (model or "").strip()
+    if not m or (provider != "claude" and m.startswith("claude-")) or (provider == "claude" and not m.startswith("claude-")):
+        return p["default_model"]
+    return m
+
 
 CHAT_SYSTEM = """Tu es l'analyste de marché intégré à « Gold AI Signal Bot », une application d'analyse \
 et de trading de l'or (XAUUSD) en M5 sur MetaTrader 5. Tu réponds en français, de façon claire, \
@@ -61,43 +94,72 @@ Réponds UNIQUEMENT par un objet JSON, sans texte autour :
 {"decision": "PLACER" ou "IGNORER", "confiance": entier de 0 à 100, "raison": "une ou deux phrases en français"}"""
 
 
-# --------------------------------------------------------------------------- clé API
-def key_path(data_dir) -> Path:
-    return Path(data_dir) / KEY_FILE
-
-
-def get_key(data_dir) -> str | None:
-    env = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-    if env:
-        return env
-    p = key_path(data_dir)
+# --------------------------------------------------------------------------- clés API
+def _keys(data_dir) -> dict:
+    p = Path(data_dir) / KEY_FILE
     try:
-        k = p.read_text(encoding="utf-8").strip()
-        return k or None
-    except OSError:
-        return None
+        d = json.loads(p.read_text(encoding="utf-8"))
+        d = d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        d = {}
+    old = Path(data_dir) / OLD_KEY_FILE                 # v2.1.0
+    if "claude" not in d and old.exists():
+        try:
+            d["claude"] = old.read_text(encoding="utf-8").strip()
+        except OSError:
+            pass
+    return d
 
 
-def set_key(data_dir, key: str | None) -> None:
-    p = key_path(data_dir)
+def get_key(data_dir, provider: str = "claude") -> str | None:
+    meta = PROVIDERS.get(provider) or {}
+    for env in meta.get("env", ()):
+        v = os.environ.get(env, "").strip()
+        if v:
+            return v
+    k = str(_keys(data_dir).get(provider) or "").strip()
+    return k or None
+
+
+def set_key(data_dir, key: str | None, provider: str = "claude") -> None:
+    if provider not in PROVIDERS or not PROVIDERS[provider]["key"]:
+        raise ValueError("Ce fournisseur n'utilise pas de clé API")
     key = (key or "").strip()
-    if not key:
-        p.unlink(missing_ok=True)
-        return
-    if not key.startswith("sk-ant-"):
-        raise ValueError("Clé API invalide : elle commence par « sk-ant- » (console.anthropic.com → API Keys)")
+    d = _keys(data_dir)
+    if key:
+        if provider == "claude" and not key.startswith("sk-ant-"):
+            raise ValueError("Clé Claude invalide : elle commence par « sk-ant- » (console.anthropic.com → API Keys)")
+        if provider == "groq" and not key.startswith("gsk_"):
+            raise ValueError("Clé Groq invalide : elle commence par « gsk_ » (console.groq.com → API Keys)")
+        if len(key) < 16 or any(ch.isspace() for ch in key):
+            raise ValueError("Clé API invalide")
+        d[provider] = key
+    else:
+        d.pop(provider, None)
+        if provider == "claude":
+            (Path(data_dir) / OLD_KEY_FILE).unlink(missing_ok=True)
+    p = Path(data_dir) / KEY_FILE
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(key, encoding="utf-8")
+    p.write_text(json.dumps(d), encoding="utf-8")
     try:
         os.chmod(p, 0o600)
     except OSError:
         pass
 
 
-def status(data_dir, model: str) -> dict:
-    k = get_key(data_dir)
-    return {"configured": bool(k), "from_env": bool(os.environ.get("ANTHROPIC_API_KEY")),
-            "key_hint": f"sk-ant-…{k[-4:]}" if k else None, "model": model, "models": MODELS}
+def status(data_dir, provider: str, model: str) -> dict:
+    provider = provider if provider in PROVIDERS else "integre"
+    meta = PROVIDERS[provider]
+    k = get_key(data_dir, provider) if meta["key"] else None
+    envs = meta.get("env", ())
+    return {"provider": provider, "needs_key": meta["key"], "signup": meta["signup"],
+            "configured": (not meta["key"]) or bool(k),
+            "from_env": any(os.environ.get(e) for e in envs),
+            "key_hint": f"…{k[-4:]}" if k else None, "model": model_for(provider, model),
+            "models": MODELS if provider == "claude" else [],
+            "providers": [{"id": pid, "label": p["label"], "needs_key": p["key"], "signup": p["signup"],
+                           "configured": (not p["key"]) or bool(get_key(data_dir, pid))}
+                          for pid, p in PROVIDERS.items()]}
 
 
 # --------------------------------------------------------------------------- appel API
@@ -105,36 +167,103 @@ class AssistantError(RuntimeError):
     pass
 
 
-def _request(key: str, body: dict, timeout: float):
-    req = urllib.request.Request(API_URL, data=json.dumps(body).encode("utf-8"), method="POST", headers={
-        "x-api-key": key, "anthropic-version": API_VERSION, "content-type": "application/json"})
+def _request(key: str, body: dict, timeout: float, url: str = API_URL, headers: dict | None = None,
+             method: str = "POST", label: str = "Claude"):
+    h = headers if headers is not None else {"x-api-key": key, "anthropic-version": API_VERSION}
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method, headers={**h, "content-type": "application/json"})
     try:
-        return urllib.request.urlopen(req, timeout=timeout, context=ssl.create_default_context())
+        ctx = ssl.create_default_context() if url.startswith("https") else None
+        return urllib.request.urlopen(req, timeout=timeout, context=ctx)
     except urllib.error.HTTPError as e:
         try:
-            msg = json.loads(e.read().decode("utf-8")).get("error", {}).get("message", "")
+            raw = json.loads(e.read().decode("utf-8"))
+            err = raw[0] if isinstance(raw, list) and raw else raw
+            msg = (err.get("error") or {}).get("message", "") if isinstance(err, dict) else ""
         except Exception:  # noqa: BLE001
             msg = ""
-        hint = {401: "clé API refusée — vérifie-la dans l'onglet Assistant IA",
+        hint = {400: "requête refusée (modèle indisponible ?)",
+                401: "clé API refusée — vérifie-la dans l'onglet Assistant IA",
                 403: "accès refusé pour cette clé",
                 404: "modèle introuvable — choisis-en un autre dans l'onglet Assistant IA",
-                429: "trop de requêtes ou crédit épuisé — réessaie plus tard",
-                529: "service Claude surchargé — réessaie dans un instant"}.get(e.code, "erreur de l'API")
-        raise AssistantError(f"Claude : {hint} ({e.code}{' — ' + msg if msg else ''})") from e
+                429: "limite gratuite ou crédit atteint — réessaie plus tard",
+                529: "service surchargé — réessaie dans un instant"}.get(e.code, "erreur de l'API")
+        raise AssistantError(f"{label} : {hint} ({e.code}{' — ' + msg[:200] if msg else ''})") from e
     except (urllib.error.URLError, TimeoutError, OSError) as e:
-        raise AssistantError(f"Claude injoignable (connexion Internet ?) : {e}") from e
+        extra = " — Ollama est-il lancé ?" if "localhost" in url or "127.0.0.1" in url else " (connexion Internet ?)"
+        raise AssistantError(f"{label} injoignable{extra} : {e}") from e
 
 
-def complete(key: str, model: str, system: str, messages: list[dict], max_tokens: int = 1024,
-             timeout: float = 60) -> str:
+# ---------------------------------------------------------------- API compatible OpenAI (Groq, Gemini, Ollama)
+def _oa(provider: str, key: str | None, base: str | None = None) -> tuple[str, dict, str]:
+    meta = PROVIDERS[provider]
+    h = {"Authorization": f"Bearer {key}"} if key else {}
+    return (base or meta["base"]).rstrip("/"), h, meta["label"].split(" —")[0]
+
+
+def oa_complete(provider: str, key: str | None, model: str, system: str, messages: list[dict],
+                max_tokens: int = 1024, timeout: float = 60, base: str | None = None) -> str:
+    url, h, label = _oa(provider, key, base)
+    body = {"model": model, "max_tokens": max_tokens, "temperature": 0.3,
+            "messages": [{"role": "system", "content": system}] + messages}
+    with _request(key or "", body, timeout, f"{url}/chat/completions", h, label=label) as r:
+        data = json.loads(r.read().decode("utf-8"))
+    try:
+        return data["choices"][0]["message"]["content"] or ""
+    except (KeyError, IndexError, TypeError) as e:
+        raise AssistantError(f"{label} : réponse inattendue") from e
+
+
+def oa_stream(provider: str, key: str | None, model: str, system: str, messages: list[dict],
+              max_tokens: int = 1500, timeout: float = 120, base: str | None = None) -> Iterator[str]:
+    url, h, label = _oa(provider, key, base)
+    body = {"model": model, "max_tokens": max_tokens, "temperature": 0.3, "stream": True,
+            "messages": [{"role": "system", "content": system}] + messages}
+    with _request(key or "", body, timeout, f"{url}/chat/completions", h, label=label) as r:
+        for raw in r:
+            line = raw.decode("utf-8", "replace").strip()
+            if not line.startswith("data:"):
+                continue
+            payload = line[5:].strip()
+            if payload == "[DONE]":
+                break
+            try:
+                ev = json.loads(payload)
+            except json.JSONDecodeError:
+                continue
+            if ev.get("error"):
+                raise AssistantError(f"{label} : {ev['error'].get('message', 'erreur')}")
+            for ch in ev.get("choices") or []:
+                txt = (ch.get("delta") or {}).get("content")
+                if txt:
+                    yield txt
+
+
+def list_models(provider: str, key: str | None, base: str | None = None) -> list[str]:
+    """Modèles proposés par le fournisseur (liste à jour, rien d'écrit en dur)."""
+    meta = PROVIDERS.get(provider) or {}
+    if meta.get("kind") == "anthropic":
+        return [m["id"] for m in MODELS]
+    if meta.get("kind") != "openai":
+        return []
+    url, h, label = _oa(provider, key, base)
+    with _request(key or "", None, 20, f"{url}/models", h, method="GET", label=label) as r:
+        data = json.loads(r.read().decode("utf-8"))
+    ids = [str(m.get("id", "")).removeprefix("models/") for m in data.get("data", []) if isinstance(m, dict)]
+    skip = ("whisper", "tts", "embed", "guard", "image", "vision-preview", "aqa", "imagen", "veo", "audio")
+    return sorted({i for i in ids if i and not any(x in i.lower() for x in skip)})
+
+
+def claude_complete(key: str, model: str, system: str, messages: list[dict], max_tokens: int = 1024,
+                    timeout: float = 60) -> str:
     body = {"model": model, "max_tokens": max_tokens, "system": system, "messages": messages}
     with _request(key, body, timeout) as r:
         data = json.loads(r.read().decode("utf-8"))
     return "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
 
 
-def stream(key: str, model: str, system: str, messages: list[dict], max_tokens: int = 1500,
-           timeout: float = 90) -> Iterator[str]:
+def claude_stream(key: str, model: str, system: str, messages: list[dict], max_tokens: int = 1500,
+                  timeout: float = 90) -> Iterator[str]:
     """Texte de la réponse au fil de l'eau (événements SSE de l'API Messages)."""
     body = {"model": model, "max_tokens": max_tokens, "system": system, "messages": messages, "stream": True}
     with _request(key, body, timeout) as r:
@@ -150,6 +279,20 @@ def stream(key: str, model: str, system: str, messages: list[dict], max_tokens: 
                 yield ev["delta"]["text"]
             elif ev.get("type") == "error":
                 raise AssistantError(f"Claude : {ev.get('error', {}).get('message', 'erreur')}")
+
+
+def complete(provider: str, key: str | None, model: str, system: str, messages: list[dict],
+             max_tokens: int = 1024, timeout: float = 60, base: str | None = None) -> str:
+    if PROVIDERS[provider]["kind"] == "anthropic":
+        return claude_complete(key or "", model, system, messages, max_tokens, timeout)
+    return oa_complete(provider, key, model, system, messages, max_tokens, timeout, base)
+
+
+def stream(provider: str, key: str | None, model: str, system: str, messages: list[dict],
+           max_tokens: int = 1500, base: str | None = None) -> Iterator[str]:
+    if PROVIDERS[provider]["kind"] == "anthropic":
+        return claude_stream(key or "", model, system, messages, max_tokens)
+    return oa_stream(provider, key, model, system, messages, max_tokens, base=base)
 
 
 def clean_history(messages: list, limit: int = 12) -> list[dict]:
@@ -280,12 +423,12 @@ def parse_review(text: str) -> dict:
     return {"decision": dec, "confidence": conf, "reason": str(d.get("raison", "")).strip()[:400]}
 
 
-def review_signal(sig: dict, checks: list[dict], context: str, key: str, model: str,
-                  timeout: float = 30) -> dict:
+def review_signal(sig: dict, checks: list[dict], context: str, key: str | None, model: str,
+                  timeout: float = 45, provider: str = "claude", base: str | None = None) -> dict:
     ctl = "\n".join(f"- {c['label']} : {c['status']} — {c['detail']}" for c in checks)
     prompt = (f"<dossier_marche>\n{context}\n</dossier_marche>\n\n"
               f"Signal à valider : {_sig_text('Signal', sig)}\n\nContrôles automatiques :\n{ctl}\n\n"
-              "Décision ?")
-    text = complete(key, model, REVIEW_SYSTEM, [{"role": "user", "content": prompt}], max_tokens=300,
-                    timeout=timeout)
+              "Décision ? Réponds uniquement par le JSON demandé.")
+    text = complete(provider, key, model, REVIEW_SYSTEM, [{"role": "user", "content": prompt}],
+                    max_tokens=400, timeout=timeout, base=base)
     return parse_review(text)

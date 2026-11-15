@@ -493,16 +493,16 @@ def create_app(cfg: Config, config_path: str = "config.yaml",
         return StreamingResponse(gen(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
-    # ------------------------------------------------------------- assistant IA (Claude)
-    def assistant_context() -> str:
+    # ------------------------------------------------------------- assistant IA
+    def assistant_inputs() -> tuple[dict, dict]:
+        """Instantané de l'interface + annonces, statistiques et robot (pour l'assistant)."""
         from datetime import datetime, timezone
 
-        from .assistant import build_context
         snap = service.snapshot()
         q, t = executor.quality, service.cfg.trading
         extra: dict = {}
         try:
-            extra["news"] = q.news.upcoming(datetime.now(timezone.utc), 6) if q.news.available else []
+            extra["news"] = q.news.upcoming(datetime.now(timezone.utc), 8) if q.news.available else []
             extra["edge"] = q.edge.summary(t)
             rows = executor.store.q("SELECT key, side, status, profit, price, time FROM trades "
                                     "WHERE leg IN (0, 1) ORDER BY id DESC LIMIT 8")
@@ -513,22 +513,46 @@ def create_app(cfg: Config, config_path: str = "config.yaml",
                            + (f" ({r['profit']:+.2f})" if r["profit"] is not None else "") for r in rows]}
         except Exception as e:  # noqa: BLE001
             log.debug("Contexte assistant partiel : %s", e)
-        return build_context(snap, extra)
+        return snap, extra
 
-    executor.context_provider = assistant_context
+    def assistant_context() -> str:
+        from .assistant import build_context
+        return build_context(*assistant_inputs())
 
-    def _assistant_key() -> str:
-        from .assistant import get_key
-        k = get_key(service.cfg.data_dir)
-        if not k:
-            raise HTTPException(400, "Clé API Claude non configurée : onglet Assistant IA → Clé API")
-        return k
+    def ai_setup() -> tuple[str, str | None, str, str | None]:
+        """(fournisseur, clé, modèle, adresse) ; lève AssistantError si la clé manque."""
+        from .assistant import PROVIDERS, AssistantError, get_key, model_for
+        c = service.cfg
+        prov = c.assistant_provider if c.assistant_provider in PROVIDERS else "integre"
+        key = get_key(c.data_dir, prov) if PROVIDERS[prov]["key"] else None
+        if PROVIDERS[prov]["key"] and not key:
+            raise AssistantError(f"clé API {PROVIDERS[prov]['label'].split(' —')[0]} non configurée "
+                                 "(onglet Assistant IA)")
+        base = c.assistant_ollama_url if prov == "ollama" else None
+        return prov, key, model_for(prov, c.assistant_model), base
+
+    def ai_review(sig: dict, checks: list) -> dict:
+        from .analyst import rule_review
+        from .assistant import build_context, review_signal
+        prov, key, model, base = ai_setup()
+        snap, extra = assistant_inputs()
+        if prov == "integre":
+            return rule_review(sig, checks, snap, extra)
+        return review_signal(sig, checks, build_context(snap, extra), key, model, provider=prov, base=base)
+
+    def ai_name() -> str:
+        from .assistant import PROVIDERS
+        return PROVIDERS.get(service.cfg.assistant_provider, PROVIDERS["integre"])["label"].split(" —")[0]
+
+    executor.ai_reviewer = ai_review
+    executor.ai_name = ai_name
 
     @app.get("/api/assistant")
     def assistant_status():
         from .assistant import status
-        t = service.cfg.trading
-        return {**status(service.cfg.data_dir, service.cfg.assistant_model),
+        c, t = service.cfg, service.cfg.trading
+        return {**status(c.data_dir, c.assistant_provider, c.assistant_model),
+                "ollama_url": c.assistant_ollama_url,
                 "ai_confirm": t.ai_confirm, "ai_min_confidence": t.ai_min_confidence,
                 "ai_block_on_error": t.ai_block_on_error, "retest_entries": t.retest_entries,
                 "retest_bars": t.retest_bars}
@@ -537,10 +561,26 @@ def create_app(cfg: Config, config_path: str = "config.yaml",
     def assistant_key(payload: dict = Body(...)):
         from .assistant import set_key
         try:
-            set_key(service.cfg.data_dir, payload.get("key"))
+            set_key(service.cfg.data_dir, payload.get("key"),
+                    payload.get("provider") or service.cfg.assistant_provider)
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
         return assistant_status()
+
+    @app.get("/api/assistant/models")
+    async def assistant_models(provider: str | None = None):
+        from .assistant import PROVIDERS, AssistantError, get_key, list_models, model_for
+        c = service.cfg
+        prov = provider if provider in PROVIDERS else c.assistant_provider
+        key = get_key(c.data_dir, prov) if PROVIDERS[prov]["key"] else None
+        try:
+            models = await asyncio.to_thread(list_models, prov, key,
+                                             c.assistant_ollama_url if prov == "ollama" else None)
+            err = None
+        except AssistantError as e:
+            models, err = [], str(e)
+        return {"provider": prov, "models": models, "error": err,
+                "default": model_for(prov, c.assistant_model if prov == c.assistant_provider else "")}
 
     @app.get("/api/assistant/context")
     def assistant_ctx():
@@ -548,39 +588,46 @@ def create_app(cfg: Config, config_path: str = "config.yaml",
 
     @app.post("/api/assistant/chat")
     def assistant_chat(payload: dict = Body(...)):
-        from .assistant import CHAT_SYSTEM, AssistantError, clean_history, stream, with_context
-        key = _assistant_key()
+        from . import assistant as A
+        from .analyst import answer
         try:
-            msgs = with_context(clean_history(payload.get("messages") or []), assistant_context())
+            hist = A.clean_history(payload.get("messages") or [])
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
-        model = service.cfg.assistant_model
+        try:
+            prov, key, model, base = ai_setup()
+        except A.AssistantError as e:
+            raise HTTPException(400, str(e)) from e
+        snap, extra = assistant_inputs()
+        headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+        if prov == "integre":
+            text = answer(hist[-1]["content"], snap, extra, payload.get("intent"))
+            return StreamingResponse(iter([text]), media_type="text/plain; charset=utf-8", headers=headers)
+        msgs = A.with_context(hist, A.build_context(snap, extra))
 
         def gen():
             try:
-                yield from stream(key, model, CHAT_SYSTEM, msgs)
-            except AssistantError as e:
+                yield from A.stream(prov, key, model, A.CHAT_SYSTEM, msgs, base=base)
+            except A.AssistantError as e:
                 yield f"\n\n⚠️ {e}"
 
-        return StreamingResponse(gen(), media_type="text/plain; charset=utf-8",
-                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+        return StreamingResponse(gen(), media_type="text/plain; charset=utf-8", headers=headers)
 
     @app.post("/api/assistant/review")
     async def assistant_review(payload: dict = Body(default={})):
-        """Avis de Claude (PLACER / IGNORER) sur un signal : celui du radar par défaut."""
-        from .assistant import AssistantError, review_signal
-        key = _assistant_key()
+        """Avis PLACER / IGNORER sur un signal : celui du radar par défaut."""
+        from .assistant import AssistantError
         snap = service.snapshot()
-        sig = find_signal(payload["key"]) if payload.get("key") else snap.get("radar")
+        sig = find_signal(payload["key"]) if payload.get("key") else (snap.get("radar") or snap.get("radar_recent"))
         if not sig:
-            raise HTTPException(404, "Aucun signal à analyser")
+            raise HTTPException(404, "Aucun signal à analyser pour l'instant")
         try:
             _, checks = await asyncio.to_thread(executor.quality.check, sig, service.cfg)
-            res = await asyncio.to_thread(review_signal, sig, checks, assistant_context(), key,
-                                          service.cfg.assistant_model)
+            res = await asyncio.to_thread(ai_review, sig, checks)
         except AssistantError as e:
             raise HTTPException(502, str(e)) from e
-        return {**res, "signal": {k: sig.get(k) for k in ("key", "side", "pattern", "score", "entry", "sl")},
+        return {**res, "by": ai_name(),
+                "signal": {k: sig.get(k) for k in ("key", "side", "pattern", "score", "entry", "sl")},
                 "checks": checks}
 
     # ------------------------------------------------------------- installation / diagnostic
