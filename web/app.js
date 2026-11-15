@@ -50,6 +50,7 @@
     if (view === "reglages") { fillSettings(); loadDiag(); loadAbout(); }
     if (view === "robot") loadBot(true);
     if (view === "assistant") loadAssistant();
+    if (view === "mission") loadMission(true);
     if (view === "analyse") requestAnimationFrame(resizeCharts);
   }
   $$(".tab").forEach((t) => t.addEventListener("click", () => show(t.dataset.view)));
@@ -1074,6 +1075,7 @@
   function onQuality() { if (S.view === "robot") loadBot(); }
 
   function onBotEvent(ev) {
+    if (S.view === "mission") loadMission();
     if (ev.notify) {
       const kind = { ok: "buy", err: "err", warn: "" }[ev.entry.level] || "";
       toast("Robot", ev.entry.message, kind, ev.entry.level === "err" ? 12000 : 7000);
@@ -1359,6 +1361,125 @@
       loadAssistant();
     } catch (err) { toast("Enregistrement impossible", err.message, "err", 7000); }
   });
+
+  /* ------------------------------------------------------------------ mission (style « Grok Bot ») */
+  const MS = { chart: null, area: null, last: null, conv: store.get("ms.conv", []), busy: false };
+  const msMoney = (v, cur) => (v == null ? "—" : (cur === "USD" || cur === "$" || !cur ? "$" : "") +
+    Number(v).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + (cur && cur !== "USD" && cur !== "$" ? " " + cur : ""));
+  function msChart() {
+    if (MS.chart) return;
+    MS.chart = LWC.createChart($("#ms-chart"), { ...baseOpts, autoSize: true,
+      grid: { vertLines: { visible: false }, horzLines: { color: "rgba(34,41,54,.45)" } },
+      rightPriceScale: { borderVisible: false }, timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false } });
+    MS.area = MS.chart.addAreaSeries({ lineColor: C.up, topColor: "rgba(34,195,154,.28)", bottomColor: "rgba(34,195,154,0)",
+      lineWidth: 2, priceFormat: { type: "price", precision: 2, minMove: 0.01 } });
+  }
+  async function loadMission(fit) {
+    let d;
+    try { d = await api("/api/mission"); } catch { return; }
+    MS.last = d;
+    const m = d.mission, acc = d.account || {}, cur = acc.currency;
+    const live = d.enabled && m && m.status === "active";
+    $("#ms-dot").className = "bot-dot " + (live ? "on" : "");
+    if (S.view !== "mission") return;
+    $("#ms-live").textContent = live ? "● En direct" : d.enabled ? "● Robot actif" : "○ Arrêté";
+    $("#ms-live").classList.toggle("on", !!d.enabled);
+    $("#ms-sub").textContent = `${d.symbol} · ${d.mode === "paper" ? "Simulateur" : "MetaTrader 5"}${acc.type ? " " + acc.type : ""}`
+      + (m ? ` · ${m.trades} trade(s)` : "");
+    const eq = m ? m.equity_now : acc.equity;
+    const el = $("#ms-eq"), prev = Number(el.dataset.v || eq);
+    el.textContent = msMoney(eq, cur); el.dataset.v = eq;
+    if (eq !== prev) { el.classList.remove("flash-up", "flash-down"); el.classList.add(eq > prev ? "flash-up" : "flash-down"); setTimeout(() => el.classList.remove("flash-up", "flash-down"), 900); }
+    if (m) {
+      const up = m.pnl >= 0;
+      $("#ms-chg").innerHTML = `<span class="${up ? "up" : "down"}">${up ? "▲" : "▼"} ${msMoney(Math.abs(m.pnl), cur)} (${m.pnl_pct > 0 ? "+" : ""}${m.pnl_pct.toFixed(2)} %)</span>
+        <span class="ms-x ${up ? "" : "down"}">${m.multiple.toFixed(2)}x</span><span class="muted sm">depuis le début de la mission</span>`;
+    } else $("#ms-chg").innerHTML = `<span class="muted">Donne une mission au bot pour démarrer →</span>`;
+    // courbe d'équité + marqueurs des trades
+    msChart();
+    const pts = [], seen = new Set();
+    for (const [t, v] of (m ? m.equity : [])) {
+      const k = Math.floor(new Date(t).getTime() / 1000);
+      if (seen.has(k)) pts[pts.length - 1].value = v; else { seen.add(k); pts.push({ time: k, value: v }); }
+    }
+    if (!pts.length && acc.equity != null) pts.push({ time: Math.floor(Date.now() / 1000), value: acc.equity });
+    const upc = !m || m.pnl >= 0;
+    MS.area.applyOptions({ lineColor: upc ? C.up : C.down, topColor: upc ? "rgba(34,195,154,.28)" : "rgba(240,86,106,.25)",
+      bottomColor: "rgba(0,0,0,0)" });
+    MS.area.setData(pts);
+    if (pts.length) {
+      const near = (ts) => pts.reduce((a, p) => Math.abs(p.time - ts) < Math.abs(a - ts) ? p.time : a, pts[0].time);
+      const mk = (d.trades || []).filter((r) => r.leg !== 2).map((r) => ({
+        time: near(Math.floor(new Date(r.time).getTime() / 1000)), position: r.side === "ACHAT" ? "belowBar" : "aboveBar",
+        color: r.side === "ACHAT" ? C.up : C.down, shape: r.side === "ACHAT" ? "arrowUp" : "arrowDown",
+        text: `${r.side === "ACHAT" ? "Achat" : "Vente"} ${f5(r.price)}` }));
+      mk.sort((a, b) => a.time - b.time);
+      MS.area.setMarkers(mk);
+      if (fit) MS.chart.timeScale().fitContent();
+    }
+    // agents
+    const ICO = { veilleur: ["👁", "rgba(76,141,255,.18)"], analyste: ["🧠", "rgba(176,124,255,.18)"],
+                  executeur: ["⚡", "rgba(227,173,63,.2)"], risque: ["🛡", "rgba(34,195,154,.18)"] };
+    $("#ms-agents-n").textContent = d.enabled ? `${d.agents.length} au travail` : "en pause";
+    $("#ms-agents").innerHTML = d.agents.map((a) => {
+      const [ico, bg] = ICO[a.id] || ["•", "transparent"];
+      let st = esc(a.state);
+      if (a.id === "veilleur" && a.next_scan) { const s2 = Math.max(0, Math.round((new Date(a.next_scan) - Date.now()) / 1000)); st += s2 > 0 ? ` · bougie dans ${s2} s` : " · analyse en cours"; }
+      return `<div class="ms-agent ${a.active ? "on" : ""}"><div class="a-head"><span class="a-ico" style="background:${bg}">${ico}</span>
+        <span class="a-name">${esc(a.name)}</span><span class="a-dot"></span></div><div class="a-role">${esc(a.role)}</div>
+        <div class="a-state">${st}</div><div class="a-items">${a.items.map((x) => `<div title="${esc(x)}">${esc(x)}</div>`).join("") || '<div>—</div>'}</div></div>`;
+    }).join("");
+    // activité
+    const LI = { ok: "✅", info: "•", warn: "⚠️", err: "⛔" };
+    $("#ms-activity").innerHTML = d.activity.length ? d.activity.map((a) => `<div class="ms-act"><span class="i">${LI[a.level] || "•"}</span>
+      <span>${esc(a.message)}</span><span class="t">${fmtDate(a.time)}</span></div>`).join("") : `<div class="muted sm">Aucune activité pour l'instant.</div>`;
+    // mission comprise
+    const stl = !m ? "aucune" : m.status === "active" ? "● en cours" : m.status;
+    $("#ms-status").textContent = stl; $("#ms-status").classList.toggle("ok", !!(m && m.status === "active"));
+    $("#ms-rules").innerHTML = !m ? "Aucune mission en cours." :
+      `<div class="sm" style="margin-bottom:6px">« ${esc(m.text)} »</div><ul>${m.understood.map((u) => `<li>${esc(u)}</li>`).join("")}</ul>`
+      + (m.seconds_left != null ? `<div class="sm" style="margin-top:6px">Fin dans ${Math.floor(m.seconds_left / 3600)} h ${Math.floor(m.seconds_left % 3600 / 60)} min</div>` : "")
+      + (m.status !== "active" && m.end_reason ? `<div class="sm" style="margin-top:6px">Terminée : ${esc(m.end_reason)}</div>` : "");
+    $("#ms-stop").disabled = $("#ms-stop-close").disabled = !(m && m.status === "active");
+    renderMsConv();
+  }
+  function renderMsConv() {
+    $("#ms-conv").innerHTML = MS.conv.map((c) => `<div class="ai-msg ${c.role}">${c.role === "user" ? esc(c.content) : md(c.content)}</div>`).join("");
+    const box = $("#ms-conv"); box.scrollTop = box.scrollHeight;
+  }
+  async function sendMission(text) {
+    text = (text || "").trim();
+    if (!text || MS.busy) return;
+    MS.busy = true; $("#ms-send").disabled = true;
+    MS.conv.push({ role: "user", content: text }); renderMsConv();
+    try {
+      let r = await api("/api/mission", { method: "POST", body: JSON.stringify({ text }) });
+      if (!r.started && /RÉEL/.test(r.reply) && confirm("Compte RÉEL détecté. Lancer quand même la mission en argent réel ?"))
+        r = await api("/api/mission", { method: "POST", body: JSON.stringify({ text, confirm_live: true }) });
+      MS.conv.push({ role: "assistant", content: r.reply });
+      if (r.started) toast("Mission lancée", "Le bot surveille l'or et trade selon ta mission.", "buy", 6000);
+    } catch (e) { MS.conv.push({ role: "assistant", content: "⚠️ " + e.message }); }
+    finally {
+      MS.busy = false; $("#ms-send").disabled = false;
+      MS.conv = MS.conv.slice(-20); store.set("ms.conv", MS.conv); loadMission(true);
+    }
+  }
+  $("#ms-form").addEventListener("submit", (e) => { e.preventDefault(); const t = $("#ms-text"); sendMission(t.value); t.value = ""; });
+  $("#ms-text").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#ms-form").requestSubmit(); } });
+  $$("#ms-examples .chip").forEach((b) => b.addEventListener("click", () => { $("#ms-text").value = b.dataset.t; $("#ms-text").focus(); }));
+  $("#ms-stop").addEventListener("click", async () => {
+    await api("/api/mission/stop", { method: "POST", body: JSON.stringify({ close: false }) }).catch((e) => toast("Erreur", e.message, "err"));
+    MS.conv.push({ role: "assistant", content: "Mission arrêtée. Les positions ouvertes gardent leur stop et leurs objectifs." });
+    store.set("ms.conv", MS.conv); loadMission();
+  });
+  $("#ms-stop-close").addEventListener("click", async () => {
+    if (!confirm("Arrêter la mission et fermer toutes les positions du robot ?")) return;
+    await api("/api/mission/stop", { method: "POST", body: JSON.stringify({ close: true }) }).catch((e) => toast("Erreur", e.message, "err"));
+    MS.conv.push({ role: "assistant", content: "Mission arrêtée et positions fermées." });
+    store.set("ms.conv", MS.conv); loadMission();
+  });
+  setInterval(() => { if (S.view === "mission" || (MS.last && MS.last.enabled)) loadMission(); }, 3000);
+  loadMission();
 
   api("/api/setup").then((st) => { if (!st.setup_done) openWizard(); }).catch(() => {});
 

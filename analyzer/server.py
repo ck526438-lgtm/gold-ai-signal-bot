@@ -6,7 +6,7 @@ import io
 import json
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -629,6 +629,116 @@ def create_app(cfg: Config, config_path: str = "config.yaml",
         return {**res, "by": ai_name(),
                 "signal": {k: sig.get(k) for k in ("key", "side", "pattern", "score", "entry", "sl")},
                 "checks": checks}
+
+    # ------------------------------------------------------------- missions (« Donne une mission au bot »)
+    @app.post("/api/mission")
+    async def mission_start(payload: dict = Body(...)):
+        from .mission import parse, reply
+        text = str(payload.get("text") or "").strip()[:1000]
+        if not text:
+            raise HTTPException(400, "Écris la mission du bot")
+        try:
+            acc = await asyncio.to_thread(lambda: executor.broker.account())
+            balance, cur = acc.equity, acc.currency
+        except Exception:  # noqa: BLE001
+            balance, cur = 0.0, "$"
+        res = parse(text, balance, currency=cur)
+        if res["empty"]:
+            return {"started": False, "reply": reply(res, False)}
+        changes = res["changes"]
+        if changes:
+            if "mode" in changes.get("trading", {}) and changes["trading"]["mode"] != service.cfg.trading.mode:
+                executor.disable("Robot désactivé : changement de mode")
+            try:
+                new = update_config(service.cfg, changes)
+            except (ValueError, TypeError) as e:
+                return {"started": False, "reply": reply(res, False, str(e))}
+            service.set_config(new)
+            save_config(new, config_path)
+        try:
+            await asyncio.to_thread(executor.start_mission, res["mission"], bool(payload.get("confirm_live")))
+        except PermissionError as e:
+            return {"started": False, "reply": reply(res, False, str(e))}
+        return {"started": True, "reply": reply(res, True), "mission": mission_view()}
+
+    @app.post("/api/mission/stop")
+    async def mission_stop(payload: dict = Body(default={})):
+        await asyncio.to_thread(executor.stop_mission, "arrêtée par toi", bool(payload.get("close")))
+        return mission_view()
+
+    def mission_view() -> dict:
+        from datetime import datetime, timezone
+
+        from .analyst import bias, rule_review
+        from .executor import _day_start
+        now = datetime.now(timezone.utc)
+        m, t, b = executor.mission, service.cfg.trading, executor.broker
+        out: dict = {"enabled": executor.enabled, "paused": executor.paused, "mode": t.mode,
+                     "symbol": service.cfg.symbol, "mission": None, "account": None, "error": None}
+        try:
+            acc = b.account()
+            out["account"] = {"equity": round(acc.equity, 2), "balance": round(acc.balance, 2),
+                              "currency": acc.currency, "type": "DÉMO" if acc.is_demo else "RÉEL"}
+            positions = b.positions(service.cfg.symbol, t.magic)
+            today = b.realized_since(_day_start(), t.magic)
+        except Exception as e:  # noqa: BLE001
+            acc, positions, today = None, [], 0.0
+            out["error"] = str(e)
+        if m is not None:
+            md = m.to_dict()
+            start = m.start_balance or (acc.equity if acc else 0)
+            eq = acc.equity if acc and m.active else (m.equity[-1][1] if m.equity else start)
+            md.update(pnl=round(eq - start, 2), pnl_pct=round((eq - start) / start * 100, 2) if start else 0.0,
+                      multiple=round(eq / start, 3) if start else 1.0, equity_now=round(eq, 2),
+                      seconds_left=max(0, int((datetime.fromisoformat(m.end_at) - now).total_seconds()))
+                      if m.end_at and m.active else None)
+            out["mission"] = md
+        # trades du robot (marqueurs du graphique + agents)
+        since = m.started_at if m else (now - timedelta(days=2)).isoformat()
+        rows = executor.store.q("SELECT key, leg, side, volume, price, status, profit, time, close_time FROM trades "
+                                "WHERE time >= ? AND status != 'erreur' ORDER BY id", (since,))
+        out["trades"] = rows[-200:]
+        snap = service.snapshot()
+        recent = snap.get("recent") or []
+        radar = snap.get("radar") or snap.get("radar_recent")
+        d, strength, why = bias(snap) if snap.get("ready") else (0, 0, [])
+        verdict = rule_review(radar, [], snap) if radar else None
+        pend = list(executor._pending.values())
+        open_n = len(positions)
+        agents = [
+            {"id": "veilleur", "name": "Veilleur", "role": "surveille le marché",
+             "state": f"{service.cfg.symbol} M5 · " + ("en direct" if snap.get("ready") else "chargement…"),
+             "next_scan": state.get("next_scan"),
+             "items": [f"{r['side']} {r['pattern']} · {r['score']}/10 · {str(r['time'])[11:16]}" for r in recent[:3]]},
+            {"id": "analyste", "name": "Analyste", "role": "note et valide chaque setup",
+             "state": ("Biais " + ("haussier" if d == 1 else "baissier" if d == -1 else "neutre")) if snap.get("ready") else "—",
+             "score": radar.get("score") if radar else None,
+             "items": ([f"{radar['side']} {radar['pattern']} {radar['score']}/10"] if radar else [])
+             + ([f"Avis : {verdict['decision']} {verdict['confidence']} %"] if verdict else [])},
+            {"id": "executeur", "name": "Exécuteur", "role": "place et gère les ordres",
+             "state": (f"{open_n} position(s) ouverte(s)" if open_n else "en attente d'un signal")
+             + (f" · {len(pend)} entrée(s) en attente" if pend else ""),
+             "items": [f"{r['side']} {r['volume']:g} lot @ {r['price'] or 0:.2f} · {r['status']}"
+                       for r in rows[-3:][::-1]]
+             + [f"Retest attendu à {p['level']:.2f}" for p in pend[:1]]},
+            {"id": "risque", "name": "Risque", "role": "protège le compte",
+             "state": f"Jour {today:+,.2f} · limite −{t.daily_loss_limit_percent:g} %",
+             "items": ([f"Trades {m.trades}/{m.max_trades}" if m.max_trades else f"Trades mission : {m.trades}"] if m else [])
+             + ([f"Objectif +{m.profit_target:,.2f}"] if m and m.profit_target else [])
+             + ([f"Perte max −{m.loss_stop:,.2f}"] if m and m.loss_stop else [])
+             + ([f"Fin à {datetime.fromisoformat(m.end_at):%H:%M} UTC"] if m and m.end_at else [])
+             + (["Positions sécurisées à la fin"] if m and m.close_at_end else [])},
+        ]
+        for a in agents:
+            a["active"] = bool(executor.enabled)
+        out["agents"] = agents
+        out["activity"] = executor.store.q("SELECT time, level, message FROM bot_log ORDER BY id DESC LIMIT 30")
+        out["bias_reasons"] = why
+        return out
+
+    @app.get("/api/mission")
+    async def mission_get():
+        return await asyncio.to_thread(mission_view)
 
     # ------------------------------------------------------------- installation / diagnostic
     @app.get("/api/setup")

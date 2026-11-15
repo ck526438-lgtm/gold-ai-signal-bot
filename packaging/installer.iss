@@ -1,7 +1,7 @@
 ﻿; Inno Setup : installateur Windows de Gold AI Signal Bot
-;   iscc /DMyAppVersion=2.2.0 packaging\installer.iss
+;   iscc /DMyAppVersion=2.3.0 packaging\installer.iss
 #ifndef MyAppVersion
-  #define MyAppVersion "2.2.0"
+  #define MyAppVersion "2.3.0"
 #endif
 #define MyAppName "Gold AI Signal Bot"
 #define MyAppExe "Gold-AI-Signal-Bot.exe"

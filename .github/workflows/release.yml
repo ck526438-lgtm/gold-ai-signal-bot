@@ -113,6 +113,12 @@ jobs:
             Le robot de trading est **désactivé par défaut** et refuse les comptes réels tant que tu ne l'autorises pas.
             Guide complet : `Guide_Gold_AI_Signal_Bot.pdf`.
 
+            ### Nouveautés 2.3 — donne une mission au bot
+            - Nouvel onglet **Mission** : écris ce que tu veux en français (« trade les cassures du range asiatique, risque 0,5 %, profits à 2R, arrête-toi à 11h et ferme tout »), le bot comprend et s'en occupe
+            - Tableau de bord en direct : équité, multiplicateur, courbe avec les trades, **4 agents** (Veilleur, Analyste, Exécuteur, Risque), fil d'activité
+            - Fin automatique de la mission : heure, objectif de gain (gains sécurisés), perte maximale
+            - Gratuit et hors ligne, garde-fous du robot toujours actifs
+
             ### Nouveautés 2.2 — assistant IA gratuit
             - Onglet **Assistant IA** intégré, **gratuit et hors ligne** (aucune clé) : analyse du marché avec scénario (entrée, objectifs, invalidation), explication des signaux, résumé de session, analyse du journal, annonces
             - **Validation des trades par l'assistant** (option) : PLACER / IGNORER avec confiance et raison avant chaque ordre du robot

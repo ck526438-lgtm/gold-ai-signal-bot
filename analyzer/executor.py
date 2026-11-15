@@ -127,6 +127,9 @@ class Executor:
         self.data_dir = Path(data_dir)
         self.ai_reviewer = None                 # (sig, checks) -> {"decision", "confidence", "reason"}
         self.ai_name = None                     # () -> nom affiché (« Analyste intégré », « Groq »…)
+        from .mission import MissionStore
+        self.missions = MissionStore(Path(data_dir) / "mission.json")
+        self.mission = self.missions.load()     # mission en langage naturel (onglet Mission)
 
     # ------------------------------------------------------------------ outils
     @property
@@ -173,7 +176,7 @@ class Executor:
         "edge": "Figure perdante sur l'historique", "hour": "Heure perdante", "mtf": "Tendances M15/H1/H4",
         "news": "Annonce économique", "vol": "Volatilité", "ml": "Probabilité IA", "account": "Compte / Algo Trading",
         "limits": "Limites (jour, trades ouverts, perte)", "market": "Spread / prix / symbole",
-        "size": "Lot minimum du courtier", "pullback": "Repli / retest non atteint (entrée annulée)", "ai": "Refusé par l'assistant IA", "error": "Ordre refusé par le courtier", "autre": "Autre",
+        "size": "Lot minimum du courtier", "pullback": "Repli / retest non atteint (entrée annulée)", "mission": "Hors de la mission en cours", "ai": "Refusé par l'assistant IA", "error": "Ordre refusé par le courtier", "autre": "Autre",
     }
 
     def skip_stats(self, days: int = 7) -> list[dict]:
@@ -203,8 +206,63 @@ class Executor:
                       notify=True)
             return self.status()
 
+    # ------------------------------------------------------------------ missions
+    def start_mission(self, m, confirm_live: bool = False) -> dict:
+        """Lance une mission (déjà comprise par mission.parse) et active le robot."""
+        with self._lock:
+            if self.mission is not None and self.mission.active:
+                self.mission.status, self.mission.end_reason = "arrêtée", "remplacée par une nouvelle mission"
+            if not self.enabled:
+                self.enable(confirm_live)          # lève PermissionError si le compte ne convient pas
+            acc = self.broker.account()
+            m.start_balance = round(acc.equity, 2)
+            m.record_equity(acc.equity)
+            self.mission = m
+            self.missions.save(m)
+            self._log("ok", "Mission lancée : « " + m.text[:160] + " »", notify=True)
+            return m.to_dict()
+
+    def stop_mission(self, reason: str = "arrêtée par toi", close: bool = False) -> None:
+        with self._lock:
+            m = self.mission
+            if m is None or not m.active:
+                return
+            m.status, m.end_reason = "arrêtée", reason
+            self.missions.save(m)
+            if close:
+                self.close_all()
+            self.disable(f"Mission {reason}")
+
+    def mission_tick(self) -> None:
+        m = self.mission
+        if m is None or not m.active:
+            return
+        acc = self.broker.account()
+        m.record_equity(acc.equity)
+        reason = m.check_end(acc.equity)
+        if reason:
+            m.status, m.end_reason = "terminée", reason
+            self.missions.save(m)
+            secure = m.close_at_end or reason.startswith(("objectif", "perte"))
+            if secure:
+                for p in self.broker.positions(self.cfg.symbol, self.t.magic):
+                    self.broker.close(p, self.cfg.symbol, self.t.magic, self.t.deviation_points, "fin de mission")
+                self.sync()
+            self._pending.clear()
+            self.enabled = False
+            pnl = acc.equity - m.start_balance
+            self._log("ok" if pnl >= 0 else "warn",
+                      f"Mission terminée — {reason}. Résultat {pnl:+,.2f} {acc.currency}"
+                      + (" ; positions fermées, gains sécurisés." if secure else " ; positions laissées avec leur stop."),
+                      notify=True)
+        elif len(m.equity) % 30 == 0:
+            self.missions.save(m)
+
     def disable(self, reason: str = "Robot désactivé") -> None:
         with self._lock:
+            if self.mission is not None and self.mission.active and not reason.startswith("Mission"):
+                self.mission.status, self.mission.end_reason = "arrêtée", "robot désactivé"
+                self.missions.save(self.mission)
             self._pending.clear()
             if self.enabled:
                 self.enabled = False
@@ -213,6 +271,9 @@ class Executor:
     def close_all(self) -> list[str]:
         """Arrêt d'urgence : désactive le robot et clôture toutes ses positions."""
         with self._lock:
+            if self.mission is not None and self.mission.active:
+                self.mission.status, self.mission.end_reason = "arrêtée", "arrêt d'urgence"
+                self.missions.save(self.mission)
             self.enabled = False
             self._pending.clear()
             msgs = []
@@ -266,6 +327,11 @@ class Executor:
             return []
         if self.store.q("SELECT 1 FROM trades WHERE key=? LIMIT 1", (sig["key"],)):
             return []
+        if self.mission is not None:
+            why = self.mission.allows(sig)
+            if why:
+                self._skip(sig, why, "mission")
+                return []
         age = (_now() - datetime.fromisoformat(sig["close_time"])).total_seconds()
         if age > FRESH_SECONDS:
             self._skip(sig, f"signal trop ancien ({int(age)} s) — données en retard ?", "stale")
@@ -494,6 +560,9 @@ class Executor:
                             f"contrôles ({sig['pattern']}, {sig['score']}/10)", notify=True)
             self._emit({"type": "trade", "side": side_txt, "volume": total, "price": done[0]["price"],
                         "sl": sl, "tps": [x["tp"] for x in done], "mode": t.mode})
+            if self.mission is not None and self.mission.active and not manual:
+                self.mission.trades += 1
+                self.missions.save(self.mission)
         return done
 
     # ------------------------------------------------------------------ gestion
@@ -535,6 +604,10 @@ class Executor:
         with self._lock:
             if market and self.t.mode == "paper":
                 self.paper.update_market(market["close"], market.get("high"), market.get("low"))
+            try:
+                self.mission_tick()
+            except Exception as e:  # noqa: BLE001
+                log.warning("Suivi de la mission : %s", e)
             try:
                 self._watch_pending()
             except Exception as e:  # noqa: BLE001

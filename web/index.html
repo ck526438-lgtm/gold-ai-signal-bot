@@ -20,6 +20,7 @@
   </div>
   <nav class="tabs" role="tablist">
     <button class="tab active" data-view="analyse">Analyse</button>
+    <button class="tab" data-view="mission">Mission <span class="bot-dot" id="ms-dot"></span></button>
     <button class="tab" data-view="signaux">Signaux <span class="pill" id="open-count" hidden></span></button>
     <button class="tab" data-view="backtest">Backtest</button>
     <button class="tab" data-view="robot">Robot <span class="bot-dot" id="bot-dot"></span></button>
@@ -108,6 +109,63 @@
         </div>
 
       </aside>
+    </div>
+  </section>
+
+  <!-- ============================== MISSION ============================== -->
+  <section class="view" id="view-mission">
+    <div class="ms-grid">
+      <div class="ms-main">
+        <div class="card ms-hero">
+          <div class="ms-head">
+            <div class="ms-bot"><svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><path d="M4 24 9 12h14l5 12Z" fill="#e8b84a"/><path d="M9 12h14l-2.5 5h-9Z" fill="#f6d77a"/></svg>
+              <b>Gold Bot</b> <span class="muted sm" id="ms-sub"></span></div>
+            <span class="ms-live" id="ms-live">○ Arrêté</span>
+          </div>
+          <div class="ms-eq mono" id="ms-eq">—</div>
+          <div class="ms-chg" id="ms-chg"></div>
+          <div id="ms-chart" class="ms-chart"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Agents</h3><span class="muted sm" id="ms-agents-n"></span></div>
+          <div class="ms-agents" id="ms-agents"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Activité</h3><button class="link" data-goto="robot">Tout voir</button></div>
+          <div class="ms-activity" id="ms-activity"></div>
+        </div>
+      </div>
+
+      <aside class="col-side">
+        <div class="card ms-task">
+          <div class="card-head"><h3>Mission du bot</h3><span class="pill-state" id="ms-status">aucune</span></div>
+          <div class="ms-conv" id="ms-conv"></div>
+          <div class="ms-examples" id="ms-examples">
+            <button class="chip" data-t="Trade seulement les cassures du range asiatique, risque 0,5 %, prends les profits à 2R, maximum 2 trades, arrête-toi à 11h et ferme tout.">Cassure de Londres</button>
+            <button class="chip" data-t="Trade les balayages du plus haut et du plus bas de la veille avec entrée sur retest, risque 0,5 %, objectif +2 %, perte max 1 %, jusqu'à 20h.">Pièges de liquidité</button>
+            <button class="chip" data-t="Mode prudent en simulateur : seulement les meilleurs signaux, chaque trade validé par l'assistant, pas de trade autour des annonces, stop suiveur, pendant 4 heures.">Prudent (simulateur)</button>
+            <button class="chip" data-t="Achats seulement, score 7 minimum, laisse courir les gains jusqu'à 5x le risque, maximum 3 trades, ferme tout à 20h.">Achats, laisse courir</button>
+          </div>
+          <form class="ai-input" id="ms-form">
+            <textarea id="ms-text" rows="3" placeholder="Donne une mission au bot… ex. « achète les cassures du range asiatique, risque 0,5 %, profits à 2R, arrête-toi à 11h »"></textarea>
+            <button class="btn primary" type="submit" id="ms-send">Lancer</button>
+          </form>
+          <div class="row-btns ms-stop">
+            <button class="btn sm" id="ms-stop" type="button">Arrêter la mission</button>
+            <button class="btn ghost sm danger-text" id="ms-stop-close" type="button">Arrêter et tout fermer</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Mission comprise</h3></div>
+          <div id="ms-rules" class="ms-rules muted sm">Aucune mission en cours.</div>
+        </div>
+      </aside>
+    </div>
+    <div class="box-warn">
+      <b>Le bot exécute ta mission, il ne garantit pas de gain.</b> Les contrôles de sécurité restent actifs (compte réel refusé sans autorisation, annonces, spread, perte maximale du jour). Lance d'abord tes missions en <b>Simulateur</b> ou sur un <b>compte démo</b>.
     </div>
   </section>
 

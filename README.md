@@ -17,6 +17,41 @@ Application **Windows** (installateur `.exe`), alertes dans le navigateur, le te
 
 ---
 
+## Nouveautés 2.3 — donne une mission au bot (comme Grok Bot)
+
+![Mission](docs/mission.png)
+
+Onglet **Mission** : tu écris ce que tu veux en français, le bot comprend, répond « C'est parti »
+et s'en occupe tout seul — gratuit et hors ligne, aucune IA extérieure.
+
+> « Trade seulement les cassures du range asiatique, risque 0,5 %, prends les profits à 2R,
+> maximum 2 trades, arrête-toi à 11h et ferme tout. »
+
+Il comprend : **setups** (cassure du range asiatique, balayages de la veille, avalements, pin bars…),
+**sens** (achats / ventes seulement), **risque** par trade, **score** minimum ou « meilleurs signaux »,
+**prise de profit** en R (« 2R », « 10x »), **objectif de gain** et **perte maximale** de la mission
+(en $ ou en %), **nombre de trades**, **heure de fin** (« jusqu'à 11h », « pendant 3 heures »),
+**fermeture de tout** à la fin, **stop suiveur**, **break-even**, **entrée sur retest**, **validation
+par l'assistant**, **annonces**, **mode** simulateur / MT5 et style **prudent** ou **actif**.
+
+Pendant la mission, l'écran montre comme dans Grok Bot :
+- le **compteur d'équité en direct** avec le gain depuis le début et le **multiplicateur** (1,05x…) ;
+- la **courbe d'équité** avec chaque achat / vente ;
+- **4 agents au travail** : *Veilleur* (surveille XAUUSD M5, prochaine bougie), *Analyste* (biais,
+  dernier setup, avis PLACER / IGNORER), *Exécuteur* (ordres, positions, retests en attente),
+  *Risque* (résultat du jour, trades, objectif, perte max, heure de fin) ;
+- le **fil d'activité** et les notifications.
+
+Le bot arrête la mission tout seul à l'heure dite, quand l'objectif de gain est atteint (gains
+sécurisés : positions fermées) ou quand la perte maximale est touchée. Les garde-fous restent actifs
+(compte réel refusé sans autorisation, annonces, spread, perte maximale du jour).
+
+> La vidéo de Grok Bot montre 260 $ devenus 3 418 $ en une nuit sur des memecoins : c'est un
+> résultat exceptionnel mis en avant pour la publicité, pas une performance à attendre. Ce bot
+> reprend la **façon de travailler** (missions, agents, suivi en direct), pas les promesses de gain.
+
+---
+
 ## Nouveautés 2.2 — assistant IA gratuit, dollar / taux et setups de l'or
 
 ![Assistant IA](docs/assistant.png)
@@ -365,6 +400,7 @@ analyzer/
   quality.py     contrôle qualité avant ordre (statistiques, M15/H1/H4, annonces, volatilité)
   ml.py          modèle IA : probabilité de gain, validation walk-forward
   macro.py       dollar (DXY) et taux US 10 ans, sans donnée future
+  mission.py     missions en langage naturel : compréhension, filtres, fin automatique
   analyst.py     assistant intégré (gratuit) : analyse, scénario, session, journal, validation PLACER / IGNORER
   assistant.py   dossier de marché et IA en ligne facultative (Groq, Gemini, Ollama, Claude)
   executor.py    robot : garde-fous, lot, ordres, break-even, stop suiveur, retournement, pause
