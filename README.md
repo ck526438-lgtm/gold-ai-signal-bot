@@ -17,6 +17,44 @@ Application **Windows** (installateur `.exe`), alertes dans le navigateur, le te
 
 ---
 
+## Nouveautés 2.1 — Claude, le dollar et les setups de l'or
+
+![Assistant IA](docs/assistant.png)
+
+- **Assistant IA (Claude)** — un onglet de chat où tu poses tes questions (« que fait l'or ? »,
+  « pourquoi ce signal ? », « résumé de session », « analyse mon journal »). Claude reçoit à chaque
+  question un **dossier de marché à jour** : prix, tendances M5/H1, M15/H4 du signal, zones S/R,
+  range asiatique, niveaux de la veille, dollar et taux, annonces USD, statistiques de tes figures,
+  derniers signaux et trades du robot. Il cite les niveaux exacts et donne son scénario avec
+  l'invalidation.
+- **Validation des trades par Claude** (option du robot) — quand un signal a passé tous les
+  contrôles, Claude lit le dossier et répond **PLACER** ou **IGNORER** avec une confiance (0–100 %)
+  et sa raison. Le robot ne trade que si Claude confirme au-dessus du seuil (60 % par défaut).
+  Sa justification est enregistrée avec le trade. Bouton « Avis de Claude » pour le radar en manuel.
+- **Contexte macro** — tendance H1 de l'**indice du dollar (DXY)** et du **taux US à 10 ans**
+  (MetaTrader 5 si ton courtier les publie, sinon Yahoo `DX-Y.NYB` / `^TNX`). Dollar et taux en baisse :
+  +1 point aux achats d'or, −1 aux ventes (et inversement). Sans donnée future : la bougie H1 n'est
+  utilisée qu'après sa clôture (test automatique).
+- **Deux setups propres à l'or** :
+  - **cassure du range asiatique** (0 h–7 h UTC) entre 7 h et 11 h UTC, range de 0,8 à 8 ATR,
+    clôture franche hors du range ;
+  - **balayage de liquidité** : la bougie dépasse le plus haut (ou plus bas) de la veille puis
+    referme à l'intérieur avec une longue mèche — piège classique avant un retournement.
+- **Entrée de précision sur retest** — pour ces deux setups, le robot place l'ordre au **niveau
+  cassé / balayé** (0,1 ATR avant) au lieu d'entrer au marché : stop identique, entrée plus proche,
+  meilleur gain / risque. Annulé si le prix part sans revenir (6 bougies). Le backtest simule la même règle.
+
+Pour activer Claude : crée une clé sur [console.anthropic.com](https://console.anthropic.com)
+(*API Keys*), colle-la dans **Assistant IA → Connexion à Claude**. Elle reste sur ton PC
+(`%LOCALAPPDATA%\Gold AI Signal Bot\data\anthropic_key.txt`, ou variable `ANTHROPIC_API_KEY`).
+Chaque question ou validation est facturée par Anthropic à l'usage (quelques centimes).
+
+> Claude **analyse** le dossier comme un trader expérimenté, il ne **prédit** pas le prix. La
+> validation réduit les trades douteux mais ne garantit aucun gain : garde les garde-fous et teste
+> d'abord en Simulateur / démo.
+
+---
+
 ## Ce qui change par rapport à la v1
 
 La v1 (moteur à règles 0-100 + ML, en ligne de commande) reste disponible sous le tag
@@ -194,7 +232,7 @@ score /10, zones, tendances M15/H1/H4, contrôles volatilité / annonces / sprea
 même gestion (lot selon le risque, TP1 + TP2, break-even, stop suiveur, sortie sur retournement,
 entrée sur repli, sortie au temps, pause sur perte journalière) tournent **directement dans
 MetaTrader 5**, sans Python — sur ton PC ou sur le VPS MetaTrader 24 h/24, avec notifications sur
-l'appli MT5 du téléphone. Sans les statistiques par figure ni l'IA. Démo uniquement par défaut.
+l'appli MT5 du téléphone. Sans les statistiques par figure, l'IA, Claude, le dollar / taux ni les setups range asiatique et veille (réservés à l'application). Démo uniquement par défaut.
 Installation : copie le `.ex5` dans *Fichier → Ouvrir le dossier des données → MQL5/Experts*, puis glisse-le sur un graphique XAUUSD M5.
 
 ## Ce que contient l'espace
@@ -260,7 +298,8 @@ Mode terminal seul (sans navigateur, robot inclus) : `python main.py watch`.
 
 **1. Figures de chandeliers** — avalement, pin bar (marteau / étoile filante), étoile du matin /
 du soir, trois soldats / trois corbeaux, pinces (tweezer), cassure d'inside bar. Les
-micro-bougies (< 0,6 ATR) sont ignorées.
+micro-bougies (< 0,6 ATR) sont ignorées. Propres à l'or : **cassure du range asiatique** et
+**balayage du plus haut / plus bas de la veille**.
 
 **2. Score de confluence /10**
 
@@ -272,6 +311,7 @@ micro-bougies (< 0,6 ATR) sont ignorées.
 | Rejet d'une zone S/R (forte si ≥ 2 touches) ou rebond sur les EMA | +1 à +2 |
 | RSI qui confirme (pas en excès) | +1 (−1 si excès) |
 | ADX ≥ 18 | +1 (−1 sinon) |
+| Dollar (DXY) et taux US 10 ans dans le sens du trade | +1 (−1 si contre) |
 | Session Londres (7 h–11 h UTC) / New York (12 h–20 h UTC) | +0,5 |
 
 Qualité : **A+** ≥ 8 · **A** ≥ 7 · **B** ≥ 6 (seuil réglable).
@@ -319,6 +359,8 @@ analyzer/
   backtest.py    simulation des trades
   quality.py     contrôle qualité avant ordre (statistiques, M15/H1/H4, annonces, volatilité)
   ml.py          modèle IA : probabilité de gain, validation walk-forward
+  macro.py       dollar (DXY) et taux US 10 ans, sans donnée future
+  assistant.py   Claude : chat, dossier de marché, validation PLACER / IGNORER
   executor.py    robot : garde-fous, lot, ordres, break-even, stop suiveur, retournement, pause
   broker.py      courtiers MetaTrader 5 et Simulateur
   mt5link.py     connexion MT5 persistante, recherche des terminaux installés

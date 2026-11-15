@@ -227,7 +227,7 @@ main { padding: 18px 20px 40px; max-width: 1680px; margin: 0 auto; }
 .seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; }
 .seg button { background: none; border: 0; padding: 5px 11px; font-size: 12px; color: var(--muted); }
 .seg button.on { background: var(--panel-2); color: var(--text); }
-select, input[type=number], input:not([type]) {
+select, input[type=number], input[type=password], input:not([type]) {
   height: 32px; padding: 0 10px; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 8px; font-size: 13px;
 }
 select:focus, input:focus { outline: 2px solid rgba(227,173,63,.45); outline-offset: 0; border-color: var(--accent); }
@@ -459,3 +459,44 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .box-warn { background: rgba(255,198,112,.08); border: 1px solid rgba(255,198,112,.3); border-radius: 8px; padding: 8px 12px; font-size: 13px; margin: 8px 0; }
 .box-warn ul { margin: 4px 0 0 18px; padding: 0; }
 .radar-prev .place-btn { width: auto; margin-top: 8px; display: inline-flex; }
+
+/* ---------- or : macro et niveaux ---------- */
+.gold-ctx { display: grid; gap: 8px; }
+.gold-ctx .g-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 13px; }
+.gold-ctx .g-row .muted { font-size: 12px; }
+.gold-ctx .g-bias { padding: 8px 10px; border-radius: 8px; background: rgba(227,173,63,.08); font-size: 12.5px; }
+.gold-ctx .g-bias.up { background: rgba(34,195,154,.1); }
+.gold-ctx .g-bias.down { background: rgba(240,86,106,.1); }
+.gold-ctx hr { border: 0; border-top: 1px solid var(--line); margin: 2px 0; width: 100%; }
+
+/* ---------- assistant IA ---------- */
+.ai-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start; }
+@media (max-width: 1050px) { .ai-grid { grid-template-columns: 1fr; } }
+.ai-chat { display: flex; flex-direction: column; min-height: 640px; height: calc(100vh - 190px); }
+.ai-quick { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.chip { border: 1px solid var(--line); background: transparent; color: var(--text); border-radius: 999px; padding: 5px 11px; font-size: 12.5px; cursor: pointer; }
+.chip:hover { border-color: var(--accent); color: var(--accent); }
+.ai-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 4px 2px 10px; }
+.ai-msg { max-width: 88%; padding: 10px 13px; border-radius: 12px; font-size: 13.5px; line-height: 1.55; overflow-wrap: anywhere; }
+.ai-msg.user { align-self: flex-end; background: rgba(227,173,63,.14); border: 1px solid rgba(227,173,63,.3); white-space: pre-wrap; }
+.ai-msg.assistant { align-self: flex-start; background: var(--panel-2, rgba(255,255,255,.03)); border: 1px solid var(--line); }
+.ai-msg.assistant p { margin: 0 0 8px; } .ai-msg.assistant p:last-child { margin-bottom: 0; }
+.ai-msg.assistant ul, .ai-msg.assistant ol { margin: 4px 0 8px; padding-left: 20px; }
+.ai-msg.assistant h4 { margin: 10px 0 4px; font-size: 13.5px; color: var(--accent); }
+.ai-msg.assistant code { font-family: "JetBrains Mono", monospace; font-size: 12px; }
+.ai-msg.typing::after { content: "▍"; animation: blink 1s steps(2) infinite; color: var(--accent); }
+@keyframes blink { 50% { opacity: 0; } }
+.ai-empty { margin: auto; text-align: center; color: var(--muted); max-width: 420px; font-size: 13px; }
+.ai-input { display: flex; gap: 8px; align-items: flex-end; border-top: 1px solid var(--line); padding-top: 10px; }
+.ai-input textarea { flex: 1; resize: none; min-height: 44px; max-height: 160px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font: inherit; font-size: 13.5px; }
+.ai-input textarea:focus { outline: 2px solid rgba(227,173,63,.45); border-color: transparent; }
+.row-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.pill-state { font-size: 12px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.pill-state.ok { color: var(--up); border-color: rgba(34,195,154,.4); }
+.ai-review { margin-top: 10px; font-size: 13px; }
+.ai-review .verdict { font-weight: 700; font-size: 15px; }
+.ai-review .verdict.up { color: var(--up); } .ai-review .verdict.down { color: var(--down); }
+#ai-bot-form .field { margin-bottom: 10px; }
+.gold-ctx .g-row > :last-child { white-space: nowrap; }
+.ai-grid .card .field { margin-bottom: 12px; }
+.ai-grid .card .field .hint { display: block; margin-top: 4px; }

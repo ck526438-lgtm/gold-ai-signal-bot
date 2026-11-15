@@ -36,7 +36,7 @@
   <h1>Gold AI <span>Signal Bot</span></h1>
   <div class="sub">Analyse et robot de trading de l'or (XAUUSD) en M5 — guide d'utilisation</div>
   <img src="../analyse.png" alt="">
-  <div class="v">Version 2.0 · Windows, Linux · MetaTrader 5</div>
+  <div class="v">Version 2.1 · Windows, Linux · MetaTrader 5</div>
 </section>
 
 <h2>1. À quoi sert l'application</h2>
@@ -104,6 +104,7 @@ apprendre à lire l'analyse, pas pour placer des ordres à ces niveaux.</div>
   <tr><td>Rejet d'une zone S/R (forte si ≥ 2 touches) ou rebond sur les EMA</td><td>+1 à +2</td></tr>
   <tr><td>RSI qui confirme sans excès</td><td>+1 (−1 si excès)</td></tr>
   <tr><td>ADX ≥ 18 (marché directionnel)</td><td>+1 (−1 sinon)</td></tr>
+  <tr><td>Dollar (DXY) et taux US 10 ans dans le sens du trade</td><td>+1 (−1 si contre)</td></tr>
   <tr><td>Session Londres / New York</td><td>+0,5</td></tr>
 </table>
 <p>Qualité : <b>A+</b> ≥ 8 · <b>A</b> ≥ 7 · <b>B</b> ≥ 6. Stop derrière la mèche + 0,25 ATR, TP1 = 1,5 R,
@@ -137,9 +138,33 @@ positions (numéro magic 730526) · mode Simulateur sans argent.</p>
 <p><b>Débutant</b> (0,25 %, 3 trades/jour), <b>Équilibré</b> (défaut), <b>Actif</b> (scores faibles à risque réduit),
 <b>Tous les signaux</b> (dès le score 4, sans filtres statistiques ni IA ; annonces, spread et perte du jour restent actifs).</p>
 
-<h2>7. Robot autonome dans MetaTrader 5 (EA)</h2>
-<p>Le fichier <code>Gold_AI_Signal_Bot_EA.ex5</code> (dans la Release) applique la même analyse et la même gestion
-directement dans MetaTrader 5, sans Python : sur ton PC ou un VPS MetaTrader 24 h/24.</p>
+<h2>7. Assistant IA (Claude)</h2>
+<figure><img src="../assistant.png" alt=""><figcaption>Sans clé valide, Claude renvoie une erreur claire (ici : clé refusée).</figcaption></figure>
+<ol class="steps">
+  <li>Crée une clé API sur <b>console.anthropic.com</b> → <i>API Keys</i> (paiement à l'usage, quelques centimes par question).</li>
+  <li>Onglet <b>Assistant IA</b> → <i>Connexion à Claude</i> : colle la clé, choisis le modèle (Sonnet recommandé), <b>Enregistrer</b>.</li>
+  <li>Pose ta question ou clique une analyse toute prête : analyse du marché, pourquoi ce signal, résumé de session, analyse du journal, annonces du jour.</li>
+</ol>
+<p>À chaque question, Claude reçoit un dossier à jour : prix, tendances, zones, range asiatique, plus haut / bas de la veille,
+dollar et taux, annonces USD, statistiques de tes figures, derniers signaux et trades. Il ne voit rien d'autre et ne
+« devine » pas le prix : il lit le dossier comme un analyste.</p>
+<h3>Validation des trades par Claude</h3>
+<p>Dans <i>Robot : validation par Claude</i>, active « Claude doit confirmer chaque trade ». Quand un signal a passé tous
+les contrôles, Claude répond <b>PLACER</b> ou <b>IGNORER</b> avec une confiance et sa raison ; le robot ne trade que si
+Claude confirme au-dessus du seuil (60 % par défaut). Si Claude est injoignable, le robot ne trade pas (réglable).</p>
+<h3>Nouveaux setups et entrée sur retest</h3>
+<ul>
+  <li><b>Cassure du range asiatique</b> : range de 0 h à 7 h UTC, cassure franche entre 7 h et 11 h UTC.</li>
+  <li><b>Balayage de la veille</b> : la bougie dépasse le plus haut (ou plus bas) de la veille puis referme à l'intérieur avec une longue mèche.</li>
+  <li><b>Entrée sur retest</b> : pour ces setups, l'ordre attend que le prix revienne sur le niveau cassé. Stop identique, entrée plus proche :
+      meilleur gain / risque. Annulé après 6 bougies si le prix ne revient pas.</li>
+  <li><b>Dollar et taux</b> : la tendance H1 du DXY et du taux US 10 ans donne +1 point si elle soutient le trade, −1 si elle le contredit.</li>
+</ul>
+
+<h2>8. Robot autonome dans MetaTrader 5 (EA)</h2>
+<p>Le fichier <code>Gold_AI_Signal_Bot_EA.ex5</code> (dans la Release) applique l'analyse des chandeliers et la même gestion
+directement dans MetaTrader 5, sans Python : sur ton PC ou un VPS MetaTrader 24 h/24. Il n'inclut pas Claude, le dollar
+et les taux, ni les setups du range asiatique et de la veille : ces fonctions demandent l'application.</p>
 <ol class="steps">
   <li>MT5 → <i>Fichier → Ouvrir le dossier des données</i> → <code>MQL5\Experts</code> : copie le fichier <code>.ex5</code>.</li>
   <li>Dans le Navigateur, clic droit → <i>Actualiser</i>, puis glisse l'EA sur un graphique <b>XAUUSD M5</b>.</li>
@@ -147,7 +172,7 @@ directement dans MetaTrader 5, sans Python : sur ton PC ou un VPS MetaTrader 24 
 </ol>
 <p>Avec <code>InpAutoTrade = false</code>, l'EA affiche des boutons PLACER / IGNORER et notifie le téléphone.</p>
 
-<h2>8. Routine conseillée</h2>
+<h2>9. Routine conseillée</h2>
 <ol class="steps">
   <li>Semaine 1 : analyse seule. Lis le radar, compare avec ton propre jugement, note tes avis dans le journal.</li>
   <li>Backtest 50 000 bougies MT5 ; désactive les figures et ajuste les sessions qui perdent.</li>
@@ -156,7 +181,7 @@ directement dans MetaTrader 5, sans Python : sur ton PC ou un VPS MetaTrader 24 
   <li>Évite les 30 minutes autour du NFP, du CPI et de la Fed, même en manuel.</li>
 </ol>
 
-<h2>9. Dépannage</h2>
+<h2>10. Dépannage</h2>
 <table>
   <tr><th>Problème</th><th>Solution</th></tr>
   <tr><td>« Aucune donnée MT5 pour XAUUSD »</td><td>Le nom ne correspond pas à ton courtier. Recopie-le depuis Observation du marché dans Réglages → Données (ex. <code>XAUUSDm</code>, <code>GOLD</code>).</td></tr>
@@ -164,6 +189,8 @@ directement dans MetaTrader 5, sans Python : sur ton PC ou un VPS MetaTrader 24 
   <tr><td>Le robot ne trade pas</td><td>Lis l'encadré « Pourquoi le robot ne trade pas » de l'onglet Robot ; utilise « Tester un ordre » sur un compte démo.</td></tr>
   <tr><td>« spread trop élevé »</td><td>Normal à l'ouverture asiatique et autour des annonces. Ne monte pas le maximum au-delà de 8–10 pips.</td></tr>
   <tr><td>La page ne s'ouvre pas</td><td>Ouvre <code>http://localhost:8010</code> à la main ; vérifie que la fenêtre noire est ouverte.</td></tr>
+  <tr><td>Claude : « clé API refusée » / « crédit épuisé »</td><td>Vérifie la clé et le solde sur console.anthropic.com, puis réenregistre-la dans l'onglet Assistant IA.</td></tr>
+  <tr><td>« Dollar et taux indisponibles »</td><td>Ton courtier ne publie pas l'indice et Yahoo est injoignable : l'analyse continue sans le critère macro.</td></tr>
   <tr><td>Tout vérifier</td><td>Réglages → État du système : chaque point indique quoi corriger.</td></tr>
 </table>
 </body>

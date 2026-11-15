@@ -34,17 +34,20 @@ class Management:
     pullback_r: float = 0.3
     pullback_bars: int = 3
     target_r: float = 0.0              # encaisser vite : objectif unique à X R (0 = TP1/TP2)
+    retest: bool = False               # cassures / balayages : entrée sur retest du niveau
+    retest_bars: int = 6
 
     @classmethod
     def from_cfg(cls, cfg) -> "Management":
         t = cfg.trading
         return cls(t.trailing, t.trail_start_r, t.trail_distance_r, t.reversal_exit, t.reversal_score,
                    t.reversal_momentum, t.reversal_structure, t.entry_mode, t.pullback_r, t.pullback_bars,
-                   t.quick_target_r)
+                   t.quick_target_r, t.retest_entries, t.retest_bars)
 
     @property
     def active(self) -> bool:
-        return self.trailing or self.reversal_exit or self.entry_mode == "pullback" or self.target_r > 0
+        return self.trailing or self.reversal_exit or self.entry_mode == "pullback" or self.target_r > 0 \
+            or self.retest
 
 
 def reversal_at(an: Analyzer, j: int, direction: int, min_score: float) -> Signal | None:
@@ -144,11 +147,19 @@ def _simulate(an: Analyzer, sig: Signal, spread_pips: float, max_bars: int,
     d = sig.direction
     spread = spread_pips * an.cfg.pip
     entry, start = sig.entry + d * spread, sig.index + 1
-    if mg is not None and mg.entry_mode == "pullback":
+    wait = None
+    if mg is not None and mg.retest and sig.retest is not None:
+        # entrée sur retest du niveau cassé / balayé (même règle qu'en direct)
+        level = round(sig.retest + d * 0.1 * sig.atr_pips * an.cfg.pip, 2)
+        if (sig.entry - level) * d > 0 and (level - sig.sl) * d > 0:
+            wait = mg.retest_bars
+    elif mg is not None and mg.entry_mode == "pullback":
         # entrée sur repli : le prix d'achat (ask) doit revenir au niveau avant TP1
         level = sig.entry - d * mg.pullback_r * abs(sig.entry - sig.sl)
+        wait = mg.pullback_bars
+    if wait is not None:
         filled = None
-        for j in range(sig.index + 1, min(n, sig.index + 1 + mg.pullback_bars)):
+        for j in range(sig.index + 1, min(n, sig.index + 1 + wait)):
             hit = (l[j] + spread <= level) if d == 1 else (h[j] >= level)
             tp_touch = (h[j] >= sig.tp1) if d == 1 else (l[j] <= sig.tp1)
             if tp_touch:          # ordre inconnu dans la bougie : on suppose le gagnant manqué
@@ -157,8 +168,8 @@ def _simulate(an: Analyzer, sig: Signal, spread_pips: float, max_bars: int,
                 filled = j
                 break
         if filled is None:
-            j = min(n - 1, sig.index + mg.pullback_bars)
-            if sig.index + mg.pullback_bars >= n:
+            j = min(n - 1, sig.index + wait)
+            if sig.index + wait >= n:
                 return Outcome("en cours", 0.0, False, None, None)
             return Outcome("non rempli", 0.0, False, j, None)
         entry, start = level, filled

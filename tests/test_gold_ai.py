@@ -1,0 +1,227 @@
+"""v2.1 : contexte macro, figures propres à l'or, entrées sur retest et assistant Claude."""
+import json
+
+import numpy as np
+import pandas as pd
+import pytest
+from fastapi.testclient import TestClient
+
+from analyzer import assistant, macro
+from analyzer.config import Config
+from analyzer.executor import Executor
+from analyzer.mt5link import MT5Link
+from analyzer.server import create_app
+from analyzer.strategy import Analyzer
+from tests.fake_mt5 import FakeMT5
+from tests.test_analyzer import synthetic
+from tests.test_trading import make_sig
+
+
+# ------------------------------------------------------------------ macro
+def _hourly(df, slope):
+    h1 = df["close"].resample("1h").last().dropna()
+    return pd.Series(100 + slope * np.arange(len(h1)), index=h1.index)
+
+
+def test_macro_no_lookahead():
+    df = synthetic()
+    s = _hourly(df, 0.01)
+    full = macro.attach(df, {"dxy": s})
+    cut = df.index[3000]
+    part = macro.attach(df.loc[:cut], {"dxy": s[s.index + pd.Timedelta(hours=1) <= cut]})
+    a, b = full.loc[cut], part.loc[cut]
+    assert a["dxy"] == b["dxy"] and a["dxy_trend"] == b["dxy_trend"]
+    # la H1 ouverte à 10 h n'est connue qu'à 11 h
+    t = df.index[(df.index.hour == 10) & (df.index.minute == 30)][5]
+    assert full.loc[t, "dxy"] == s[t.floor("h") - pd.Timedelta(hours=1)]
+
+
+def test_gold_bias_and_factor():
+    assert macro.gold_bias(-1, -1) == 1 and macro.gold_bias(1, 0) == -1 and macro.gold_bias(0, 1) == 0
+    df = synthetic()
+    up = macro.attach(df, {"dxy": _hourly(df, 0.02), "us10y": _hourly(df, 0.001)})   # dollar ↑ taux ↑
+    an = Analyzer(up, Config())
+    sig = next(s for s in (an.inspect(i) for i in range(2000, len(an.c))) if s)
+    lab = [f.label for f in sig.factors if f.label.startswith("Macro")]
+    assert lab and sig.macro == -1
+    assert ("contre" in lab[0]) == (sig.direction == 1)
+    d = macro.describe(up.iloc[-1])
+    assert d["gold_bias"] == -1 and {i["key"] for i in d["items"]} == {"dxy", "us10y"}
+    # sans données macro : aucun facteur ajouté
+    plain = Analyzer(df, Config())
+    assert not any(f.label.startswith("Macro") for s in (plain.inspect(i) for i in range(2000, 2400)) if s
+                   for f in s.factors)
+
+
+# ------------------------------------------------------------------ figures de l'or
+def _day(start, closes, highs=None, lows=None):
+    idx = pd.date_range(start, periods=len(closes), freq="5min", tz="UTC")
+    c = np.asarray(closes, float)
+    o = np.r_[c[0], c[:-1]]
+    h = np.maximum(o, c) + 0.3 if highs is None else np.asarray(highs, float)
+    lo = np.minimum(o, c) - 0.3 if lows is None else np.asarray(lows, float)
+    return pd.DataFrame({"open": o, "high": h, "low": lo, "close": c, "volume": 1.0}, index=idx)
+
+
+def test_asian_range_breakout_detected():
+    rng = np.random.default_rng(3)
+    base = 4000 + rng.normal(0, 0.8, 288 * 3).cumsum() * 0.3          # 3 jours calmes
+    df = _day("2026-03-02", base)
+    day = df.index.normalize()[-1]
+    asia = df[(df.index >= day) & (df.index < day + pd.Timedelta(hours=7))]
+    hi = asia["high"].max()
+    k = df.index.get_loc(day + pd.Timedelta(hours=8))
+    df.iloc[k, df.columns.get_loc("open")] = df["close"].iloc[k - 1]
+    df.iloc[k, df.columns.get_loc("close")] = hi + 3.0
+    df.iloc[k, df.columns.get_loc("high")] = hi + 3.2
+    df.iloc[k, df.columns.get_loc("low")] = df["close"].iloc[k - 1] - 0.1
+    df.iloc[k - 1, df.columns.get_loc("close")] = min(df["close"].iloc[k - 1], hi - 0.1)
+    cfg = Config()
+    an = Analyzer(df, cfg)
+    names = [p.name for p in an.gold_setups(k, an.atr[k])]
+    assert "Cassure du range asiatique haussière" in names
+    assert an._retest[k] == pytest.approx(hi)
+    cfg.strategy.asian_breakout = False
+    assert not Analyzer(df, cfg).gold_setups(k, an.atr[k])
+
+
+def test_prev_day_sweep_detected():
+    rng = np.random.default_rng(5)
+    df = _day("2026-03-02", 4000 + rng.normal(0, 0.8, 288 * 3).cumsum() * 0.3)
+    an0 = Analyzer(df, Config())
+    k = len(df) - 100
+    pdh = an0.pdh[k]
+    assert not np.isnan(pdh)
+    df.iloc[k, df.columns.get_loc("open")] = pdh - 0.5
+    df.iloc[k, df.columns.get_loc("high")] = pdh + 3.0
+    df.iloc[k, df.columns.get_loc("close")] = pdh - 1.0
+    df.iloc[k, df.columns.get_loc("low")] = pdh - 1.2
+    an = Analyzer(df, Config())
+    hits = [p for p in an.gold_setups(k, an.atr[k]) if p.name == "Balayage du plus haut de la veille"]
+    assert hits and hits[0].direction == -1 and an._retest[k] == pytest.approx(pdh)
+
+
+# ------------------------------------------------------------------ robot : retest et Claude
+@pytest.fixture()
+def bot(tmp_path):
+    def build(**trading):
+        cfg = Config()
+        cfg.trading.quality_edge = False
+        for k, v in trading.items():
+            setattr(cfg.trading, k, v)
+        fake = FakeMT5()
+        ex = Executor(cfg, tmp_path, link=MT5Link(fake))
+        ex.enable()
+        return ex, fake
+    return build
+
+
+def test_retest_entry_waits_for_level(bot):
+    ex, fake = bot(trailing=False)
+    sig = dict(make_sig(entry=1080.08, sl=1079.0, tp1=1081.7, tp2=1082.8), retest=1079.6, atr_pips=40)
+    assert ex.on_signal(sig) == [] and ex._pending[sig["key"]]["kind"] == "retest"
+    level = ex._pending[sig["key"]]["level"]
+    assert level == pytest.approx(1079.6 + 0.4)   # 0,1 ATR avant le niveau
+    fake.bid = round(level - fake.spread, 2)
+    ex.manage()
+    assert fake.requests and all(abs(r["price"] - level) < 1e-6 for r in fake.requests)
+
+
+def test_claude_blocks_or_confirms(bot, tmp_path):
+    ex, fake = bot(ai_confirm=True, ai_min_confidence=60, trailing=False, retest_entries=False)
+    # pas de clé : bloqué par prudence
+    assert ex.on_signal(make_sig()) == [] and not fake.requests
+    assert any(s["code"] == "ai" for s in ex.skip_stats())
+    assistant.set_key(tmp_path, "sk-ant-test-1234")
+    seen = {}
+
+    def reviewer(sig, checks, ctx, key, model):
+        seen.update(key=key, model=model, ctx=ctx)
+        return {"decision": "IGNORER", "confidence": 80, "reason": "zone opposée trop proche"}
+    ex.ai_reviewer = reviewer
+    ex.context_provider = lambda: "DOSSIER"
+    assert ex.on_signal(make_sig(key="K1")) == [] and not fake.requests
+    assert seen == {"key": "sk-ant-test-1234", "model": "claude-sonnet-5-5", "ctx": "DOSSIER"}
+    ex.ai_reviewer = lambda *a: {"decision": "PLACER", "confidence": 55, "reason": "moyen"}
+    assert ex.on_signal(make_sig(key="K2")) == []                    # confiance trop basse
+    ex.ai_reviewer = lambda *a: {"decision": "PLACER", "confidence": 75, "reason": "structure propre"}
+    done = ex.on_signal(make_sig(key="K3"))
+    assert done and fake.requests
+    checks = json.loads(ex.store.q("SELECT analysis FROM trades WHERE key='K3' LIMIT 1")[0]["analysis"])
+    assert checks[-1]["id"] == "ai" and checks[-1]["status"] == "ok"
+
+
+def test_claude_error_policy(bot, tmp_path):
+    ex, fake = bot(ai_confirm=True, ai_block_on_error=False, retest_entries=False)
+    assistant.set_key(tmp_path, "sk-ant-x")
+
+    def boom(*a):
+        raise assistant.AssistantError("Claude injoignable")
+    ex.ai_reviewer = boom
+    assert ex.on_signal(make_sig()) and fake.requests                # non bloquant si demandé
+
+
+# ------------------------------------------------------------------ assistant
+def test_assistant_helpers(tmp_path):
+    with pytest.raises(ValueError):
+        assistant.set_key(tmp_path, "abc")
+    assistant.set_key(tmp_path, "sk-ant-abcdef9876")
+    st = assistant.status(tmp_path, "claude-sonnet-5-5")
+    assert st["configured"] and st["key_hint"].endswith("9876") and "abcdef" not in json.dumps(st)
+    h = assistant.clean_history([{"role": "assistant", "content": "x"}, {"role": "user", "content": "a"},
+                                 {"role": "user", "content": "b"}])
+    assert h == [{"role": "user", "content": "a\n\nb"}]
+    with pytest.raises(ValueError):
+        assistant.clean_history([{"role": "user", "content": "a"}, {"role": "assistant", "content": "b"}])
+    r = assistant.parse_review('Voici : {"decision": "placer", "confiance": 140, "raison": "ok"}')
+    assert r == {"decision": "PLACER", "confidence": 100, "reason": "ok"}
+    with pytest.raises(assistant.AssistantError):
+        assistant.parse_review("je ne sais pas")
+
+
+@pytest.fixture()
+def client(tmp_path, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    cfg = Config(source="demo", data_dir=str(tmp_path / "data"))
+    with TestClient(create_app(cfg, str(tmp_path / "config.yaml"))) as c:
+        yield c
+
+
+def test_state_has_gold_context(client):
+    s = client.get("/api/state").json()
+    assert s["macro"] and s["macro"]["items"]
+    assert {"asia_high", "asia_low", "prev_day_high", "prev_day_low"} <= set(s["levels"])
+    ctx = client.get("/api/assistant/context").json()["context"]
+    assert "Range asiatique" in ctx and "Dollar (DXY)" in ctx and "Prix" in ctx
+
+
+def test_assistant_api(client, monkeypatch):
+    assert not client.get("/api/assistant").json()["configured"]
+    r = client.post("/api/assistant/chat", json={"messages": [{"role": "user", "content": "Analyse"}]})
+    assert r.status_code == 400 and "Clé API" in r.json()["detail"]
+    assert client.put("/api/assistant/key", json={"key": "pas-une-cle"}).status_code == 400
+    st = client.put("/api/assistant/key", json={"key": "sk-ant-zzzz1111"}).json()
+    assert st["configured"] and st["key_hint"].endswith("1111")
+
+    sent = {}
+
+    def fake_stream(key, model, system, messages, **kw):
+        sent.update(key=key, model=model, messages=messages)
+        yield "L'or est "
+        yield "**haussier**."
+    monkeypatch.setattr(assistant, "stream", fake_stream)
+    r = client.post("/api/assistant/chat", json={"messages": [{"role": "user", "content": "Analyse"}]})
+    assert r.status_code == 200 and r.text == "L'or est **haussier**."
+    assert sent["key"] == "sk-ant-zzzz1111" and "<dossier_marche>" in sent["messages"][-1]["content"]
+
+    monkeypatch.setattr(assistant, "complete",
+                        lambda *a, **k: '{"decision": "IGNORER", "confiance": 70, "raison": "macro contraire"}')
+    r = client.post("/api/assistant/review", json={})
+    assert r.status_code in (200, 404)
+    if r.status_code == 200:
+        assert r.json()["decision"] == "IGNORER" and r.json()["checks"]
+
+    assert client.put("/api/settings", json={"assistant_model": "gpt-4"}).status_code == 400
+    assert client.put("/api/settings", json={"assistant_model": "claude-haiku-5-5"}).status_code == 200
+    assert client.get("/api/assistant").json()["model"] == "claude-haiku-5-5"
+    assert client.put("/api/assistant/key", json={"key": ""}).json()["configured"] is False

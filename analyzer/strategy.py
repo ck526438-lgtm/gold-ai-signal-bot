@@ -41,6 +41,8 @@ class Signal:
     blocked: str | None = None     # raison du rejet, None si valide
     atr_pips: float = 0.0
     mtf: dict = field(default_factory=dict)   # tendances {"m15", "h1", "h4"} : +1 / 0 / −1
+    retest: float | None = None    # niveau cassé / balayé : entrée de précision sur son retest
+    macro: int = 0                 # biais macro pour l'or (dollar + taux) : +1 / 0 / −1
 
     @property
     def side(self) -> str:
@@ -102,6 +104,70 @@ class Analyzer:
         self.bias4 = a["h4_bias"].to_numpy()
         self.idx = a.index
         self.sw_hi, self.sw_lo = swing_points(self.h, self.l)
+        n = len(self.c)
+        col = lambda name: a[name].fillna(0).to_numpy().astype(int) if name in a else np.zeros(n, int)  # noqa: E731
+        self.dxy_t, self.us10y_t = col("dxy_trend"), col("us10y_trend")
+        self.has_macro = "dxy_trend" in a or "us10y_trend" in a
+        self._retest: dict[int, float] = {}
+        self._levels()
+
+    def _levels(self) -> None:
+        """Range asiatique du jour et plus haut / plus bas de la veille, connus à chaque bougie."""
+        s, n = self.s, len(self.c)
+        self.asia_hi = np.full(n, np.nan)
+        self.asia_lo = np.full(n, np.nan)
+        self.pdh = np.full(n, np.nan)
+        self.pdl = np.full(n, np.nan)
+        if n == 0:
+            return
+        hours = self.idx.hour + self.idx.minute / 60
+        days = self.idx.normalize()
+        a0, a1 = s.asian_range_utc
+        frame = pd.DataFrame({"h": self.h, "l": self.l, "day": days, "asia": (hours >= a0) & (hours < a1)})
+        asia = frame[frame["asia"]].groupby("day").agg(h=("h", "max"), l=("l", "min"), n=("h", "size"))
+        asia = asia[asia["n"] >= 36]                       # au moins 3 h de cotations
+        full = frame.groupby("day").agg(h=("h", "max"), l=("l", "min"), n=("h", "size"))
+        full = full[full["n"] >= 100]                      # journée complète (pas un bout de dimanche)
+        after = np.asarray(hours >= a1)
+        dkey = pd.Index(days)
+        self.asia_hi = np.where(after, asia["h"].reindex(dkey).to_numpy(), np.nan)
+        self.asia_lo = np.where(after, asia["l"].reindex(dkey).to_numpy(), np.nan)
+        # veille : dernière journée complète AVANT la date de la bougie
+        if len(full):
+            pos = full.index.searchsorted(dkey) - 1
+            ok = pos >= 0
+            k = np.clip(pos, 0, None)
+            self.pdh = np.where(ok, full["h"].to_numpy()[k], np.nan)
+            self.pdl = np.where(ok, full["l"].to_numpy()[k], np.nan)
+
+    def gold_setups(self, i: int, atr: float) -> list[pat.Pattern]:
+        """Figures propres à l'or : cassure du range asiatique et balayage de liquidité."""
+        s, out = self.s, []
+        o, h, l, c = self.o, self.h, self.l, self.c
+        hour = self.idx[i].hour + self.idx[i].minute / 60
+        rng = max(h[i] - l[i], 1e-9)
+        if s.asian_breakout and s.asian_range_utc[1] <= hour < s.breakout_until_utc:
+            hi, lo = self.asia_hi[i], self.asia_lo[i]
+            if not np.isnan(hi) and 0.8 * atr <= hi - lo <= 8 * atr:
+                mid = (hi + lo) / 2
+                body = abs(c[i] - o[i]) / rng
+                if c[i] > hi + 0.1 * atr and c[i - 1] <= hi and c[i] > o[i] and body >= 0.4:
+                    out.append(pat.Pattern("Cassure du range asiatique haussière", 1, 2, max(l[i], mid)))
+                    self._retest[i] = hi
+                elif c[i] < lo - 0.1 * atr and c[i - 1] >= lo and c[i] < o[i] and body >= 0.4:
+                    out.append(pat.Pattern("Cassure du range asiatique baissière", -1, 2, min(h[i], mid)))
+                    self._retest[i] = lo
+        if s.liquidity_sweep:
+            ph, pl = self.pdh[i], self.pdl[i]
+            if not np.isnan(ph) and h[i] > ph + 0.05 * atr and c[i] < ph and c[i] < o[i] \
+                    and (h[i] - max(o[i], c[i])) / rng >= 0.45:
+                out.append(pat.Pattern("Balayage du plus haut de la veille", -1, 3, h[i]))
+                self._retest[i] = ph
+            elif not np.isnan(pl) and l[i] < pl - 0.05 * atr and c[i] > pl and c[i] > o[i] \
+                    and (min(o[i], c[i]) - l[i]) / rng >= 0.45:
+                out.append(pat.Pattern("Balayage du plus bas de la veille", 1, 3, l[i]))
+                self._retest[i] = pl
+        return out
 
     @property
     def warmup(self) -> int:
@@ -141,7 +207,7 @@ class Analyzer:
         atr = self.atr[i]
         ts = self.idx[i]
 
-        found = [p for p in pat.detect(self.o, self.h, self.l, self.c, i, atr)
+        found = [p for p in pat.detect(self.o, self.h, self.l, self.c, i, atr) + self.gold_setups(i, atr)
                  if p.name not in s.disabled_patterns]
         if not found:
             return None
@@ -210,6 +276,21 @@ class Analyzer:
         else:
             F.append(Factor(f"Marché sans direction (ADX {self.adx[i]:.0f})", -1))
 
+        # 6) Contexte macro : dollar (DXY) et taux US 10 ans
+        macro = 0
+        if s.use_macro and self.has_macro:
+            from .macro import gold_bias
+            dx, ty = int(self.dxy_t[i]), int(self.us10y_t[i])
+            macro = gold_bias(dx, ty)
+            arrow = lambda v: "en hausse" if v == 1 else "en baisse" if v == -1 else "neutre"  # noqa: E731
+            txt = f"dollar {arrow(dx)}, taux US {arrow(ty)}"
+            if macro == d:
+                F.append(Factor(f"Macro favorable ({txt})", 1))
+            elif macro == -d:
+                F.append(Factor(f"Macro contre le trade ({txt})", -1))
+            else:
+                F.append(Factor(f"Macro neutre ({txt})", 0))
+
         session_ok = in_session(ts + pd.Timedelta(minutes=5), s.sessions_utc)
         F.append(Factor("Session Londres / New York" if session_ok else "Hors session principale",
                         0.5 if session_ok else 0))
@@ -248,5 +329,7 @@ class Analyzer:
             blocked = "Hors des heures de session configurées"
 
         mtf = {"m15": int(self.bias15[i]), "h1": int(self.bias[i]), "h4": int(self.bias4[i])}
+        rt = self._retest.get(i) if best.name in pat.PATTERN_NAMES[-4:] else None
         return Signal(ts, i, d, round(entry, 5), round(sl, 5), round(tp1, 5), round(tp2, 5),
-                      score, best.name, F, round(risk / pip, 1), blocked, round(atr / pip, 1), mtf)
+                      score, best.name, F, round(risk / pip, 1), blocked, round(atr / pip, 1), mtf,
+                      None if rt is None else round(float(rt), 5), macro)

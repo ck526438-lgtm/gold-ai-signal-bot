@@ -34,6 +34,12 @@ class StrategyConfig:
     spread_pips: float = 3.3        # coût simulé (0,33 $ mesuré sur XAUUSD, ForexClub démo) (backtest + suivi des signaux)
     max_hold_bars: int = 48         # sortie forcée après 4 h
     disabled_patterns: list = field(default_factory=list)  # figures ignorées
+    # --- spécifique à l'or ---
+    use_macro: bool = True          # dollar (DXY) et taux US 10 ans dans le score
+    asian_breakout: bool = True     # cassure du range asiatique à l'ouverture de Londres
+    asian_range_utc: list = field(default_factory=lambda: [0, 7])  # heures UTC du range asiatique
+    breakout_until_utc: int = 11    # cassure acceptée jusqu'à cette heure UTC
+    liquidity_sweep: bool = True    # balayage du plus haut / plus bas de la veille
 
 
 @dataclass
@@ -93,6 +99,12 @@ class TradingConfig:
     max_atr_pips: float = 120.0
     # --- intelligence artificielle (voir analyzer/ml.py)
     quality_ml: bool = True            # probabilité de gain estimée par le modèle entraîné
+    # --- validation par Claude (onglet Assistant IA) et entrées de précision
+    ai_confirm: bool = False           # Claude doit confirmer chaque trade avant envoi (clé API requise)
+    ai_min_confidence: int = 60        # confiance minimale de Claude (0–100)
+    ai_block_on_error: bool = True     # Claude injoignable : ne pas trader (True) ou ignorer
+    retest_entries: bool = True        # cassures / balayages : entrée sur retest du niveau (ordre limite)
+    retest_bars: int = 6               # validité du retest (bougies M5)
     ml_min_proba: float = 0.0          # 0 = seuil automatique choisi en validation, sinon 0,30–0,90
 
 
@@ -108,6 +120,7 @@ class Config:
     broker_utc_offset: int = 0
     pip: float = 0.1                # XAUUSD : 1 pip = 0,10 $ (10 points de 0,01)
     desktop_notifications: bool = False
+    assistant_model: str = "claude-sonnet-5-5"   # modèle Claude de l'onglet Assistant IA
     data_dir: str = "data"
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     trading: TradingConfig = field(default_factory=TradingConfig)
@@ -117,7 +130,7 @@ class Config:
 
 
 EDITABLE_ROOT = {"symbol", "source", "csv_path", "bars", "broker_utc_offset", "desktop_notifications",
-                 "mt5_path", "mt5_bridge", "setup_done"}
+                 "mt5_path", "mt5_bridge", "setup_done", "assistant_model"}
 
 
 def _apply(cfg: Config, raw: dict) -> Config:
@@ -179,6 +192,11 @@ def validate(cfg: Config) -> None:
     for a, b in s.sessions_utc:
         if not 0 <= a < b <= 24:
             raise ValueError("Sessions : heures invalides")
+    a, b = s.asian_range_utc
+    if not 0 <= a < b <= s.breakout_until_utc <= 24:
+        raise ValueError("Range asiatique : heures invalides (début < fin ≤ limite de cassure)")
+    if not str(cfg.assistant_model).startswith("claude-"):
+        raise ValueError("Modèle de l'assistant : un nom de modèle Claude (claude-…)")
     t = cfg.trading
     if t.mode not in ("mt5", "paper"):
         raise ValueError("Mode du robot inconnu")
@@ -216,6 +234,10 @@ def validate(cfg: Config) -> None:
         raise ValueError("Stop suiveur : départ entre 0,2 et 5 R, distance entre 0,2 et 3 R")
     if not 0 <= t.reversal_score <= 10:
         raise ValueError("Score du signal de retournement : entre 0 et 10")
+    if not 0 <= t.ai_min_confidence <= 100:
+        raise ValueError("Confiance minimale de Claude : entre 0 et 100")
+    if not 1 <= t.retest_bars <= 24:
+        raise ValueError("Validité du retest : entre 1 et 24 bougies")
     if t.ml_min_proba and not 0.3 <= t.ml_min_proba <= 0.9:
         raise ValueError("Probabilité IA minimum : 0 (automatique) ou entre 0,30 et 0,90")
 

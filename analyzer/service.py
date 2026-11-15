@@ -181,6 +181,8 @@ class AnalysisService:
                 "day_high": round(float(an.df["high"].iloc[-288:].max()), 5),
                 "day_low": round(float(an.df["low"].iloc[-288:].min()), 5),
             },
+            "macro": _macro(an, i),
+            "levels": _levels(an, i),
             "zones": [{"price": round(z.price, 5), "touches": z.touches, "kind": z.kind,
                        "distance_pips": round((z.price - price) / cfg.pip, 1)} for z in zones],
             "radar": {**radar.to_dict(), "ml": self._ml(an, radar)} if radar else None,
@@ -212,6 +214,29 @@ class AnalysisService:
                                 app_name="Gold AI Signal Bot", timeout=15)
         except Exception:  # noqa: BLE001 — plyer est optionnel
             pass
+
+
+def _macro(an: Analyzer, i: int) -> dict | None:
+    from .macro import describe, sources
+    d = describe(an.df.iloc[i])
+    if d is not None:
+        d["sources"] = sources()
+    return d
+
+
+def _levels(an: Analyzer, i: int) -> dict:
+    """Range asiatique du jour et plus haut / plus bas de la veille (niveaux clés de l'or)."""
+    import math
+    val = lambda x: None if x is None or math.isnan(x) else round(float(x), 2)  # noqa: E731
+    hours = an.s.asian_range_utc
+    # le range du jour en cours se construit : on le calcule aussi avant sa fin
+    day = an.idx[i].normalize()
+    m = (an.idx >= day + pd.Timedelta(hours=hours[0])) & (an.idx < day + pd.Timedelta(hours=hours[1]))
+    hi = float(an.h[m].max()) if m.any() else None
+    lo = float(an.l[m].min()) if m.any() else None
+    return {"asia_high": val(hi), "asia_low": val(lo), "asia_hours": hours,
+            "asia_done": bool(an.idx[i].hour >= hours[1]),
+            "prev_day_high": val(an.pdh[i]), "prev_day_low": val(an.pdl[i])}
 
 
 def _price_24h_ago(an: Analyzer) -> float | None:

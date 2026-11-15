@@ -40,7 +40,7 @@ def test_hammer():
 
 
 def test_pattern_names_complete():
-    assert len(set(patterns.PATTERN_NAMES)) == 12
+    assert len(set(patterns.PATTERN_NAMES)) == 16
 
 
 def test_no_lookahead():
@@ -101,7 +101,7 @@ def test_management_compared_to_classic():
     m = res["management"]
     assert m["rules"]["active"] and {"robot", "classic"} <= set(m)
     assert m["robot"]["trades"] == res["stats"]["trades"]
-    cfg.trading.trailing = cfg.trading.reversal_exit = False
+    cfg.trading.trailing = cfg.trading.reversal_exit = cfg.trading.retest_entries = False
     res2 = run_backtest(synthetic(), cfg)
     assert res2["management"]["robot"] == res2["management"]["classic"]
     # un stop suiveur ne peut pas transformer un trade en perte plus grande que 1 R (+ spread)

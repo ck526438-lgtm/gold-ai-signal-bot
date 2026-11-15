@@ -124,6 +124,9 @@ class Executor:
         self.listeners: list = []
         self._lock = threading.RLock()
         self._pending: dict[str, dict] = {}     # entrées sur repli en attente
+        self.context_provider = None            # () -> str : dossier de marché pour Claude
+        self.data_dir = Path(data_dir)
+        self.ai_reviewer = None                 # remplaçable dans les tests
 
     # ------------------------------------------------------------------ outils
     @property
@@ -170,7 +173,7 @@ class Executor:
         "edge": "Figure perdante sur l'historique", "hour": "Heure perdante", "mtf": "Tendances M15/H1/H4",
         "news": "Annonce économique", "vol": "Volatilité", "ml": "Probabilité IA", "account": "Compte / Algo Trading",
         "limits": "Limites (jour, trades ouverts, perte)", "market": "Spread / prix / symbole",
-        "size": "Lot minimum du courtier", "pullback": "Repli non atteint (entrée annulée)", "error": "Ordre refusé par le courtier", "autre": "Autre",
+        "size": "Lot minimum du courtier", "pullback": "Repli / retest non atteint (entrée annulée)", "ai": "Refusé par Claude", "error": "Ordre refusé par le courtier", "autre": "Autre",
     }
 
     def skip_stats(self, days: int = 7) -> list[dict]:
@@ -300,14 +303,75 @@ class Executor:
             self._skip(sig, f"déjà {len(open_keys)} trade(s) ouvert(s) (max {t.max_open_trades})", "limits")
             return []
 
+        # ---- validation par Claude (dernier filtre, seulement si tout le reste est bon)
+        if t.ai_confirm:
+            ok, chk = self._ai_review(sig, checks)
+            checks = checks + [chk]
+            analysis = json.dumps(checks, ensure_ascii=False)
+            if self.quality.last:
+                self.quality.last["checks"] = checks
+                self.quality.last["passed"] = ok
+            self._emit({"type": "quality", "report": self.quality.last})
+            if not ok:
+                self._skip(sig, f"Claude : {chk['detail']}", "ai")
+                return []
+
         mg = self.quality.edge.management(self.cfg)
         if mg.target_r > 0:                                # encaisser vite : objectif unique proche
             from .backtest import quick_target
             tp = quick_target(sig["entry"], sig["sl"], int(sig["direction"]), mg.target_r)
             sig = dict(sig, tp1=tp, tp2=tp)
+        if mg.retest and sig.get("retest"):
+            return self._arm_retest(sig, checks, analysis)
         if mg.entry_mode == "pullback":
             return self._arm_pullback(sig, checks, analysis)
         return self._place(sig, checks, analysis, acc)
+
+    # ------------------------------------------------------------------ validation Claude
+    def _ai_review(self, sig: dict, checks: list) -> tuple[bool, dict]:
+        from .assistant import AssistantError, get_key, review_signal
+        from .quality import _chk
+
+        t = self.t
+        key = get_key(self.data_dir)
+        if not key:
+            ok = not t.ai_block_on_error
+            return ok, _chk("ai", "Validation Claude", None if ok else False,
+                            "clé API non configurée (onglet Assistant IA)"
+                            + (" — non bloquant" if ok else " — ordre bloqué"))
+        try:
+            ctx = self.context_provider() if self.context_provider else ""
+            review = (self.ai_reviewer or review_signal)(sig, checks, ctx, key, self.cfg.assistant_model)
+        except (AssistantError, ValueError, OSError) as e:
+            ok = not t.ai_block_on_error
+            return ok, _chk("ai", "Validation Claude", None if ok else False,
+                            f"{e}" + (" — non bloquant" if ok else " — ordre bloqué par prudence"))
+        ok = review["decision"] == "PLACER" and review["confidence"] >= t.ai_min_confidence
+        detail = f"{review['decision']} (confiance {review['confidence']} %, minimum {t.ai_min_confidence}) — {review['reason']}"
+        self._log("ok" if ok else "info", f"Claude sur {sig['side']} {sig['pattern']} : {detail}", notify=True)
+        return ok, _chk("ai", "Validation Claude", ok, detail)
+
+    # ------------------------------------------------------------------ entrée sur retest
+    def _arm_retest(self, sig: dict, checks: list, analysis: str) -> list[dict]:
+        """Cassure / balayage : attend que le prix revienne tester le niveau avant d'entrer.
+
+        Même mécanisme que l'entrée sur repli. Le stop ne bouge pas : l'entrée plus proche du
+        niveau réduit le risque et améliore le rapport gain / risque. Annulé si TP1 est atteint
+        avant, si le stop est touché ou après `retest_bars` bougies."""
+        t, d = self.t, int(sig["direction"])
+        lvl = float(sig["retest"])
+        buf = 0.1 * float(sig.get("atr_pips") or 0) * self.cfg.pip
+        level = round(lvl + d * buf, 2)            # un peu avant le niveau, pour être servi
+        if (sig["entry"] - level) * d <= 0 or (level - sig["sl"]) * d <= 0:
+            return self._place(sig, checks, analysis, self.broker.account())   # niveau déjà dépassé
+        expires = datetime.fromisoformat(sig["close_time"]) + timedelta(minutes=5 * t.retest_bars)
+        self._pending[sig["key"]] = {"sig": sig, "checks": checks, "analysis": analysis,
+                                     "level": level, "expires": expires, "kind": "retest"}
+        self._log("info", f"{sig['side']} {sig['pattern']} {sig['score']}/10 : entrée en attente du retest de "
+                          f"{lvl:.2f} (ordre à {level:.2f}, stop {sig['sl']:.2f}) jusqu'à {expires:%H:%M} UTC",
+                  notify=True)
+        self._emit({"type": "pending", "key": sig["key"], "level": level, "expires": expires.isoformat()})
+        return []
 
     # ------------------------------------------------------------------ entrée sur repli
     def _arm_pullback(self, sig: dict, checks: list, analysis: str) -> list[dict]:
@@ -355,8 +419,9 @@ class Executor:
                                     f"{sig['entry']:.2f} (stop plus proche, même objectif)")
             elif _now() >= p["expires"]:
                 del self._pending[key]
-                self._skip(sig, f"repli à {level:.2f} non atteint en {self.t.pullback_bars} bougies — entrée annulée",
-                           "pullback")
+                n = self.t.retest_bars if p.get("kind") == "retest" else self.t.pullback_bars
+                self._skip(sig, f"{'retest' if p.get('kind') == 'retest' else 'repli'} à {level:.2f} non atteint en "
+                                f"{n} bougies — entrée annulée", "pullback")
 
     # ------------------------------------------------------------------ envoi des ordres
     def _place(self, sig: dict, checks: list, analysis: str, acc, manual: bool = False) -> list[dict]:

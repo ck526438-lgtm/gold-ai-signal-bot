@@ -131,7 +131,33 @@ SOURCE_LABELS = {"mt5": "MetaTrader 5", "yfinance": "Yahoo Finance", "csv": "Fic
 
 
 def load_data(cfg: Config) -> tuple[pd.DataFrame, str]:
-    """Renvoie (bougies M5 clôturées, source réellement utilisée)."""
+    """Renvoie (bougies M5 clôturées + contexte macro si disponible, source réellement utilisée)."""
+    df, src = _load_prices(cfg)
+    if not cfg.strategy.use_macro or df.empty:
+        return df, src
+    from . import macro
+    try:
+        series = demo_macro(df) if src == "demo" else macro.fetch(cfg, df) if src in ("mt5", "yfinance") else {}
+        if series:
+            df = macro.attach(df, series)
+    except Exception as e:  # noqa: BLE001 — le macro ne doit jamais bloquer l'analyse
+        log.info("Contexte macro ignoré : %s", e)
+    return df, src
+
+
+def demo_macro(df: pd.DataFrame, seed: int = 7) -> dict[str, pd.Series]:
+    """DXY et taux simulés, inversement liés à l'or simulé (mode démo seulement)."""
+    import numpy as np
+
+    h1 = df["close"].resample("1h").last().dropna()
+    rng = np.random.default_rng(seed)
+    g = (h1 - h1.mean()) / max(h1.std(), 1e-9)
+    dxy = 100 - 1.2 * g + rng.normal(0, 0.15, len(h1)).cumsum() * 0.2
+    tnx = 4.2 - 0.08 * g + rng.normal(0, 0.01, len(h1)).cumsum()
+    return {"dxy": pd.Series(dxy.to_numpy(), index=h1.index), "us10y": pd.Series(tnx.to_numpy(), index=h1.index)}
+
+
+def _load_prices(cfg: Config) -> tuple[pd.DataFrame, str]:
     if cfg.source == "csv":
         return from_csv(cfg.csv_path).tail(cfg.bars), "csv"
     if cfg.source == "demo":

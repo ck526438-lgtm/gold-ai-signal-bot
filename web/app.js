@@ -49,6 +49,7 @@
     if (view === "signaux") loadJournal();
     if (view === "reglages") { fillSettings(); loadDiag(); loadAbout(); }
     if (view === "robot") loadBot(true);
+    if (view === "assistant") loadAssistant();
     if (view === "analyse") requestAnimationFrame(resizeCharts);
   }
   $$(".tab").forEach((t) => t.addEventListener("click", () => show(t.dataset.view)));
@@ -98,6 +99,12 @@
     zoneLines.forEach((l) => candles.removePriceLine(l));
     zoneLines = [];
     if (!$("#t-zones").checked || !S.snap) return;
+    const lv = S.snap.levels || {};
+    const gold = "rgba(227,173,63,.75)", grey = "rgba(176,124,255,.7)";
+    for (const [price, title, color] of [[lv.asia_high, "Asie haut", gold], [lv.asia_low, "Asie bas", gold],
+                                         [lv.prev_day_high, "Veille haut", grey], [lv.prev_day_low, "Veille bas", grey]]) {
+      if (price != null) zoneLines.push(candles.createPriceLine({ price, color, lineStyle: 1, lineWidth: 1, title, axisLabelVisible: false }));
+    }
     for (const z of S.snap.zones) {
       zoneLines.push(candles.createPriceLine({
         price: z.price, lineStyle: 2, lineWidth: z.touches >= 2 ? 2 : 1, axisLabelVisible: false,
@@ -208,7 +215,7 @@
 
     const showSig = S.selected || (s.radar && !s.radar.blocked ? s.radar : null);
     drawLevels(showSig);
-    renderRadar(); renderContext(); renderZones(); renderRecent();
+    renderRadar(); renderContext(); renderGold(); renderZones(); renderRecent();
     const open = s.journal_stats.open;
     $("#open-count").hidden = !open;
     $("#open-count").textContent = open;
@@ -334,6 +341,27 @@
       <div class="ctx"><span class="label">ADX 14</span><b>${c.adx.toFixed(0)} · <span class="muted">${adxTxt}</span></b><div class="bar"><i style="width:${Math.min(100, c.adx * 2)}%;background:${c.adx >= 18 ? C.accent : C.muted}"></i></div></div>
       <div class="ctx"><span class="label">Volatilité (ATR)</span><b>${c.atr_pips.toFixed(1)} pips</b></div>
       <div class="ctx"><span class="label">Session</span><b class="${c.in_session ? "up" : "muted"}">${c.in_session ? "● Active" : "○ Fermée"}</b><span class="muted sm">${sess} UTC</span></div>`;
+  }
+
+  function renderGold() {
+    const m = S.snap.macro, lv = S.snap.levels || {};
+    const tr = (v) => v === 1 ? `<b class="up">▲ hausse</b>` : v === -1 ? `<b class="down">▼ baisse</b>` : `<b class="muted">↔ neutre</b>`;
+    let html = "";
+    if (m) {
+      for (const it of m.items) {
+        const chg = it.chg24 == null ? "" : ` <span class="muted">${it.chg24 > 0 ? "+" : ""}${it.chg24.toFixed(2)} %</span>`;
+        html += `<div class="g-row"><span>${esc(it.label)} <span class="mono">${it.key === "us10y" ? it.value.toFixed(2) + " %" : it.value.toFixed(2)}</span>${chg}</span>${tr(it.trend)}</div>`;
+      }
+      html += `<div class="g-bias ${m.gold_bias === 1 ? "up" : m.gold_bias === -1 ? "down" : ""}">${esc(m.text)}</div>`;
+    } else {
+      html += `<div class="muted sm">Dollar et taux indisponibles (MetaTrader 5 ou Yahoo Finance nécessaires).</div>`;
+    }
+    html += `<hr>`;
+    const v = (x) => x == null ? "—" : f5(x);
+    html += `<div class="g-row"><span>Range asiatique <span class="muted">${(lv.asia_hours || [0, 7]).join("h–")}h UTC${lv.asia_done ? "" : " · en cours"}</span></span><span class="mono">${v(lv.asia_low)} – ${v(lv.asia_high)}</span></div>`;
+    html += `<div class="g-row"><span>Plus haut de la veille</span><span class="mono">${v(lv.prev_day_high)}</span></div>`;
+    html += `<div class="g-row"><span>Plus bas de la veille</span><span class="mono">${v(lv.prev_day_low)}</span></div>`;
+    $("#gold-ctx").innerHTML = html;
   }
 
   function renderZones() {
@@ -1237,6 +1265,118 @@
   });
   $("#wz-back").addEventListener("click", () => { readStep(); W.i = Math.max(0, W.i - 1); renderWizard(); });
   $("#wz-skip").addEventListener("click", async () => { await api("/api/setup/skip", { method: "POST" }).catch(() => {}); closeWizard(); });
+
+  /* ------------------------------------------------------------------ assistant IA */
+  const AI = { msgs: store.get("ai.msgs", []), busy: false, status: null };
+  function md(text) {
+    // mini-markdown sûr : on échappe tout, puis titres, gras, listes, code
+    const lines = esc(text).split("\n");
+    let html = "", list = null;
+    const inline = (t) => t.replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+      .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<i>$2</i>");
+    const close = () => { if (list) { html += `</${list}>`; list = null; } };
+    for (const raw of lines) {
+      const l = raw.trimEnd();
+      let m;
+      if ((m = l.match(/^#{1,4}\s+(.*)/))) { close(); html += `<h4>${inline(m[1])}</h4>`; }
+      else if ((m = l.match(/^\s*[-•*]\s+(.*)/))) { if (list !== "ul") { close(); html += "<ul>"; list = "ul"; } html += `<li>${inline(m[1])}</li>`; }
+      else if ((m = l.match(/^\s*\d+[.)]\s+(.*)/))) { if (list !== "ol") { close(); html += "<ol>"; list = "ol"; } html += `<li>${inline(m[1])}</li>`; }
+      else if (!l.trim()) { close(); }
+      else { close(); html += `<p>${inline(l)}</p>`; }
+    }
+    close();
+    return html;
+  }
+  function renderChat() {
+    const box = $("#ai-messages");
+    if (!AI.msgs.length) {
+      box.innerHTML = `<div class="ai-empty">Pose une question sur l'or ou choisis une analyse ci-dessus.<br>Claude voit le graphique, les tendances M15/H1/H4, les zones, le dollar, les taux, les annonces et ton historique.</div>`;
+      return;
+    }
+    box.innerHTML = AI.msgs.map((m, k) => `<div class="ai-msg ${m.role}${AI.busy && k === AI.msgs.length - 1 && m.role === "assistant" ? " typing" : ""}">${m.role === "user" ? esc(m.content) : md(m.content)}</div>`).join("");
+    box.scrollTop = box.scrollHeight;
+  }
+  async function loadAssistant() {
+    renderChat();
+    try {
+      const st = AI.status = await api("/api/assistant");
+      $("#ai-state").textContent = st.configured ? "● connecté" : "○ clé manquante";
+      $("#ai-state").classList.toggle("ok", st.configured);
+      $("#ai-key").placeholder = st.key_hint ? st.key_hint + (st.from_env ? " (variable d'environnement)" : "") : "sk-ant-…";
+      $("#ai-model").innerHTML = st.models.map((m) => `<option value="${m.id}"${m.id === st.model ? " selected" : ""}>${esc(m.label)}</option>`).join("")
+        + (st.models.some((m) => m.id === st.model) ? "" : `<option value="${esc(st.model)}" selected>${esc(st.model)}</option>`);
+      $("#ai-model-label").textContent = st.configured ? st.model : "";
+      const f = $("#ai-bot-form").elements;
+      f.ai_confirm.checked = st.ai_confirm; f.ai_min_confidence.value = st.ai_min_confidence;
+      f.ai_block_on_error.checked = st.ai_block_on_error; f.retest_entries.checked = st.retest_entries;
+      f.retest_bars.value = st.retest_bars;
+    } catch (e) { toast("Assistant indisponible", e.message, "err"); }
+  }
+  async function sendChat(text) {
+    text = (text || "").trim();
+    if (!text || AI.busy) return;
+    if (AI.status && !AI.status.configured) { toast("Clé API manquante", "Colle ta clé Anthropic dans « Connexion à Claude ».", "err", 6000); return; }
+    AI.msgs.push({ role: "user", content: text }, { role: "assistant", content: "" });
+    AI.busy = true; $("#ai-send").disabled = true; renderChat();
+    const ans = AI.msgs[AI.msgs.length - 1];
+    try {
+      const r = await fetch("/api/assistant/chat", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: AI.msgs.slice(0, -1).slice(-12) }) });
+      if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m; } catch { /* vide */ } throw new Error(m); }
+      const reader = r.body.getReader(), dec = new TextDecoder();
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        ans.content += dec.decode(value, { stream: true });
+        renderChat();
+      }
+    } catch (e) {
+      ans.content += (ans.content ? "\n\n" : "") + "⚠️ " + e.message;
+    } finally {
+      AI.busy = false; $("#ai-send").disabled = false;
+      if (!ans.content.trim()) AI.msgs.splice(-2, 2);
+      store.set("ai.msgs", AI.msgs.slice(-30)); renderChat();
+    }
+  }
+  $("#ai-form").addEventListener("submit", (e) => { e.preventDefault(); const t = $("#ai-text"); sendChat(t.value); t.value = ""; });
+  $("#ai-text").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#ai-form").requestSubmit(); } });
+  $$("#ai-quick .chip").forEach((b) => b.addEventListener("click", () => sendChat(b.dataset.q)));
+  $("#ai-clear").addEventListener("click", () => { if (AI.busy) return; AI.msgs = []; store.set("ai.msgs", []); renderChat(); });
+  $("#ai-key-save").addEventListener("click", async () => {
+    try {
+      const key = $("#ai-key").value.trim();
+      if (key) await api("/api/assistant/key", { method: "PUT", body: JSON.stringify({ key }) });
+      await api("/api/settings", { method: "PUT", body: JSON.stringify({ assistant_model: $("#ai-model").value }) });
+      $("#ai-key").value = ""; toast("Assistant enregistré", "Claude est prêt.", ""); loadAssistant();
+    } catch (e) { toast("Enregistrement impossible", e.message, "err", 7000); }
+  });
+  $("#ai-key-del").addEventListener("click", async () => {
+    try { await api("/api/assistant/key", { method: "PUT", body: JSON.stringify({ key: "" }) }); toast("Clé supprimée", "", ""); loadAssistant(); }
+    catch (e) { toast("Suppression impossible", e.message, "err"); }
+  });
+  $("#ai-review").addEventListener("click", async () => {
+    const out = $("#ai-review-out"), btn = $("#ai-review");
+    btn.disabled = true; out.innerHTML = `<span class="muted">Claude analyse le dossier…</span>`;
+    try {
+      const r = await api("/api/assistant/review", { method: "POST", body: "{}" });
+      const yes = r.decision === "PLACER";
+      out.innerHTML = `<div class="verdict ${yes ? "up" : "down"}">${yes ? "✓ PLACER" : "✕ IGNORER"} · ${r.confidence} %</div>
+        <div class="muted sm">${esc(r.signal.side)} ${esc(r.signal.pattern)} · ${r.signal.score}/10 · entrée ${f5(r.signal.entry)}</div>
+        <p>${esc(r.reason)}</p>`;
+    } catch (e) { out.innerHTML = `<span class="down">${esc(e.message)}</span>`; }
+    finally { btn.disabled = false; }
+  });
+  $("#ai-bot-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target.elements;
+    const trading = { ai_confirm: f.ai_confirm.checked, ai_min_confidence: +f.ai_min_confidence.value,
+      ai_block_on_error: f.ai_block_on_error.checked, retest_entries: f.retest_entries.checked, retest_bars: +f.retest_bars.value };
+    try {
+      await api("/api/trading/settings", { method: "PUT", body: JSON.stringify({ trading }) });
+      toast("Réglages enregistrés", trading.ai_confirm ? "Claude validera chaque trade du robot." : "Validation par Claude désactivée.", "");
+      loadAssistant();
+    } catch (err) { toast("Enregistrement impossible", err.message, "err", 7000); }
+  });
 
   api("/api/setup").then((st) => { if (!st.setup_done) openWizard(); }).catch(() => {});
 

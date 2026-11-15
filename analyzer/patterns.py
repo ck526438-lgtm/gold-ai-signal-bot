@@ -17,6 +17,9 @@ PATTERN_NAMES = [
     "Trois soldats blancs", "Trois corbeaux noirs",
     "Pince basse (tweezer bottom)", "Pince haute (tweezer top)",
     "Cassure d'inside bar haussière", "Cassure d'inside bar baissière",
+    # propres à l'or (détectées dans strategy.py : elles ont besoin de l'heure et des jours)
+    "Cassure du range asiatique haussière", "Cassure du range asiatique baissière",
+    "Balayage du plus bas de la veille", "Balayage du plus haut de la veille",
 ]
 
 
