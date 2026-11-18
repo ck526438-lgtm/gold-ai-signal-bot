@@ -1,5 +1,7 @@
 # XAUUSD Bot — Python + MetaTrader 5
 
+> Branche `xauusd-bot` du dépôt gold-ai-signal-bot (projet indépendant de la branche `main`).
+
 Bot de trading **XAUUSD** (or) modulaire, testé et documenté, **pour compte démo**, avec :
 
 - 3 stratégies interchangeables via `config.yaml` : **mean-reversion** (RSI 7 + Bollinger, M1), **trend-following** (EMA 9/21 + EMA 100 + ATR, M5) et **ML XGBoost** (triple barrier, M5)
@@ -23,13 +25,13 @@ Bot de trading **XAUUSD** (or) modulaire, testé et documenté, **pour compte d�
 ## Installation rapide
 
 ### Option A — application Windows (sans Python)
-1. Télécharge `XAUUSD-Bot-windows.zip` dans l'onglet **Releases** (ou **Actions → Windows build → artefact**).
+1. Télécharge `XAUUSD-Bot-windows.zip` dans la release **xauusd-v1.0.0** (onglet **Releases** du dépôt), ou dans **Actions → Windows build → artefact**.
 2. Dézippe dans un dossier (ex. `C:\XAUUSD-Bot`) et lance `XAUUSD-Bot.exe`.
 3. `config.yaml` et `.env.example` sont à côté de l'exe : configure-les depuis l'onglet **Configuration**.
 
 ### Option B — depuis le code (Windows, Python 3.10+)
 ```powershell
-git clone https://github.com/ck526438-lgtm/xauusd-bot.git
+git clone -b xauusd-bot https://github.com/ck526438-lgtm/gold-ai-signal-bot.git xauusd-bot
 cd xauusd-bot
 python -m venv .venv ; .venv\Scripts\activate
 pip install -r requirements.txt
