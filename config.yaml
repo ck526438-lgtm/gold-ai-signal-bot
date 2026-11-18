@@ -1,0 +1,147 @@
+# =====================================================================
+#  XAUUSD BOT — configuration centrale (aucune valeur codée en dur)
+#  Les secrets (mot de passe MT5, token Telegram) vont dans .env, jamais ici.
+# =====================================================================
+
+# demo | backtest   (le trading réel est REFUSÉ par le code)
+mode: demo
+
+symbol: XAUUSD
+
+mt5:
+  login: 0                      # 0 = utiliser la session déjà ouverte dans le terminal MT5
+  server: "VOTRE-SERVEUR-Demo"  # ex. "ICMarketsSC-Demo" — à remplir
+  path: ""                      # chemin de terminal64.exe si plusieurs terminaux
+  timeout_ms: 10000
+  reconnect_delay_s: 10
+
+account:
+  initial_capital: 10000        # utilisé par le backtest
+  currency: USD
+
+strategy:
+  name: trend_following         # mean_reversion | trend_following | ml_xgboost
+  mean_reversion:
+    timeframe: M1
+    rsi_period: 7
+    rsi_low: 20
+    rsi_high: 80
+    bb_period: 20
+    bb_std: 2.0
+  trend_following:
+    timeframe: M5
+    ema_fast: 9
+    ema_slow: 21
+    ema_filter: 100
+    atr_period: 14
+    atr_threshold: 1.0          # ATR(14) minimum en $ pour valider un croisement
+  ml_xgboost:
+    timeframe: M5
+
+filters:
+  max_spread_points: 35
+  max_positions: 1
+  min_atr: 0.5                  # ATR(14) minimum en $ (évite les marchés plats)
+  sessions_utc:                 # [heure_début, heure_fin) en UTC
+    - [7, 16]                   # Londres
+    - [12, 21]                  # New York
+  news_minutes_before: 30
+  news_minutes_after: 30
+  news_events_utc:              # EXEMPLES — vérifie et mets à jour depuis un calendrier économique
+    - "2026-12-04 13:30"        # NFP
+    - "2026-12-10 13:30"        # CPI
+    - "2026-12-16 19:00"        # FOMC
+
+risk:
+  risk_per_trade_pct: 0.5
+  max_risk_per_trade_pct: 2.0   # plafond dur — le code refuse toute valeur au-dessus
+  sl_atr_mult: 1.5
+  rr_ratio: 2.0
+  atr_period: 14
+  trailing:
+    enabled: false
+    activate_at_r: 1.0
+    distance_atr_mult: 1.5
+  killswitch:
+    max_daily_drawdown_pct: 3.0
+    max_consecutive_losses: 3
+
+execution:
+  max_slippage_points: 30
+  deviation_points: 20
+  max_retries: 3
+  retry_delay_s: 0.5
+  magic: 26111801
+  comment: "xauusd_bot"
+
+backtest:
+  timeframe_source: M1
+  start: "2024-01-01"
+  end: "2025-12-31"
+  data_csv: ""                  # optionnel : CSV (time,open,high,low,close,tick_volume,spread)
+  spread_points: 25             # utilisé si la donnée n'a pas de colonne spread
+  slippage_points: 5
+  commission_per_lot: 7.0       # $ aller-retour par lot
+  contract_size: 100
+  point: 0.01
+  volume_min: 0.01
+  volume_step: 0.01
+  volume_max: 50
+  output_dir: reports
+
+loop:
+  poll_seconds: 5
+
+logging:
+  dir: logs
+  level: INFO
+  retention_days: 30
+  trades_csv: logs/trades.csv
+
+monitoring:
+  enabled: true
+  dry_run: true                 # true = log au lieu d'envoyer (tester sans Telegram)
+  verbosity: normal             # minimal | normal | debug
+  daily_report_hour_utc: 22
+  pause_file: state.json
+  poll_seconds: 30
+  min_interval_s: 3
+  stop_confirm_timeout_s: 120
+
+wfa:
+  train_months: 6
+  test_months: 2
+  step_months: 2
+  max_bars: 500000              # au-delà, on garde les N bougies les plus récentes (anti-OOM)
+  min_trades_train: 20
+  accept_ratio: 0.6             # Sharpe OOS > 60 % du Sharpe IS
+  accept_windows_pct: 70        # sur au moins 70 % des fenêtres
+  ml_significance_margin: 0.3
+  grids:
+    mean_reversion:
+      rsi_period: [5, 7, 9]
+      rsi_low: [15, 20, 25]
+      bb_std: [2.0, 2.5]
+    trend_following:
+      ema_fast: [5, 9, 12]
+      ema_slow: [21, 34]
+      atr_threshold: [0.5, 1.0, 1.5]
+
+ml:
+  timeframe: M5
+  min_confidence: 0.60
+  models_dir: src/models
+  max_model_age_days: 90
+  barrier_atr_mult: 1.5
+  barrier_horizon: 15
+  purge_bars: 15
+  embargo_bars: 15
+  train_end: "2024-06-30"
+  val_end: "2024-12-31"
+  xgb:
+    max_depth: 4
+    n_estimators: 300
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8
+    early_stopping_rounds: 30

@@ -1,0 +1,64 @@
+name: Windows build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test-and-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Tests (pytest)
+        run: python -m pytest -q
+
+      - name: Build XAUUSD-Bot.exe
+        run: pyinstaller xauusd_bot.spec --noconfirm
+
+      - name: Self-test of the exe
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist\XAUUSD-Bot.exe -ArgumentList "--selftest" -PassThru
+          $p | Wait-Process -Timeout 240 -ErrorAction SilentlyContinue
+          if (-not $p.HasExited) { $p | Stop-Process -Force; throw "selftest timed out" }
+          if (Test-Path dist\selftest.txt) { Get-Content dist\selftest.txt }
+          if ($p.ExitCode -ne 0) { throw "selftest failed with exit code $($p.ExitCode)" }
+          if (-not (Test-Path dist\config.yaml)) { throw "config.yaml was not created next to the exe" }
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item dist\XAUUSD-Bot.exe release\
+          Copy-Item config.yaml, .env.example, README.md release\
+          Copy-Item docs -Destination release\docs -Recurse
+          Compress-Archive -Path release\* -DestinationPath XAUUSD-Bot-windows.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: XAUUSD-Bot-windows
+          path: XAUUSD-Bot-windows.zip
+
+      - name: GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: XAUUSD-Bot-windows.zip
+          generate_release_notes: true

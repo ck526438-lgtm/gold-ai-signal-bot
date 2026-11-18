@@ -1,0 +1,26 @@
+# Secrets — ne JAMAIS commiter
+.env
+*.env
+!.env.example
+
+# Runtime
+state.json
+state.tmp
+logs/
+reports/
+data/*
+!data/.gitkeep
+src/models/*
+!src/models/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Build
+build/
+dist/
+*.spec.bak
