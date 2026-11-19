@@ -9,8 +9,8 @@ mode: demo
 symbol: XAUUSD
 
 mt5:
-  login: 0                      # 0 = utiliser la session déjà ouverte dans le terminal MT5
-  server: "VOTRE-SERVEUR-Demo"  # ex. "ICMarketsSC-Demo" — à remplir
+  login: 0                      # laisse 0 : le numéro de compte va dans .env (MT5_LOGIN), le dépôt est public
+  server: "MetaQuotes-Demo"     # serveur démo MetaQuotes
   path: ""                      # chemin de terminal64.exe si plusieurs terminaux
   timeout_ms: 10000
   reconnect_delay_s: 10
@@ -81,7 +81,7 @@ backtest:
   data_csv: ""                  # optionnel : CSV (time,open,high,low,close,tick_volume,spread)
   spread_points: 25             # utilisé si la donnée n'a pas de colonne spread
   slippage_points: 5
-  commission_per_lot: 7.0       # $ aller-retour par lot
+  commission_per_lot: 0.0       # MetaQuotes-Demo : pas de commission (coût = spread)
   contract_size: 100
   point: 0.01
   volume_min: 0.01

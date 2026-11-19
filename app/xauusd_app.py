@@ -284,10 +284,11 @@ class App(tk.Tk):
         grid = ttk.Frame(sec, style="Card.TFrame")
         grid.pack(anchor="w", pady=(8, 0))
         for i, (key, label) in enumerate([("TELEGRAM_TOKEN", "Token Telegram"), ("TELEGRAM_CHAT_ID", "Chat ID"),
+                                          ("MT5_LOGIN", "N° de compte MT5"),
                                           ("MT5_PASSWORD", "Mot de passe MT5 (optionnel)")]):
             ttk.Label(grid, text=label, style="Card.TLabel").grid(row=i, column=0, sticky="w", pady=3)
             v = tk.StringVar(value=os.environ.get(key, ""))
-            ttk.Entry(grid, textvariable=v, width=52, show="" if key == "TELEGRAM_CHAT_ID" else "•").grid(row=i, column=1, padx=8, pady=3)
+            ttk.Entry(grid, textvariable=v, width=52, show="" if key in ("TELEGRAM_CHAT_ID", "MT5_LOGIN") else "•").grid(row=i, column=1, padx=8, pady=3)
             self.env_vars[key] = v
         bb = ttk.Frame(sec, style="Card.TFrame")
         bb.pack(anchor="w", pady=(8, 0))

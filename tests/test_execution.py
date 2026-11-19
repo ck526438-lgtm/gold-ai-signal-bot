@@ -80,3 +80,11 @@ def test_close_all(cfg):
     ex = _ex(cfg, mt5)
     ex.open_position(_plan(), 2000.2)
     assert ex.close_all() == 1 and mt5.positions == []
+
+
+def test_connector_checks_expected_account(cfg, monkeypatch):
+    monkeypatch.setenv("MT5_LOGIN", "5059124546")
+    monkeypatch.delenv("MT5_PASSWORD", raising=False)
+    assert MT5Connector(cfg, FakeMT5()).connect() is False   # le terminal est sur le compte 1
+    monkeypatch.setenv("MT5_LOGIN", "1")
+    assert MT5Connector(cfg, FakeMT5()).connect() is True

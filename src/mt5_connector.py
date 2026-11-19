@@ -53,17 +53,25 @@ class MT5Connector:
         kwargs: dict[str, Any] = {"timeout": int(self.mt5_cfg.get("timeout_ms", 10000))}
         if self.mt5_cfg.get("path"):
             kwargs["path"] = self.mt5_cfg["path"]
-        login = int(self.mt5_cfg.get("login") or 0)
-        if login:
-            kwargs.update(
-                login=login,
-                password=os.environ.get("MT5_PASSWORD", ""),
-                server=self.mt5_cfg.get("server", ""),
-            )
+        login = int(os.environ.get("MT5_LOGIN") or self.mt5_cfg.get("login") or 0)
+        password = os.environ.get("MT5_PASSWORD", "")
+        server = self.mt5_cfg.get("server", "")
+        if login and password:
+            kwargs.update(login=login, password=password, server=server)
         if not self.mt5.initialize(**kwargs):
             logger.error(f"MT5 initialize() a échoué : {self.mt5.last_error()}")
             self.connected = False
             return False
+        acc = self.mt5.account_info()
+        if acc is not None and login and int(acc.login) != login:
+            logger.error(
+                f"Le terminal MT5 est connecté au compte {acc.login}, pas au compte {login} attendu. "
+                "Connecte-toi au bon compte dans MT5 (Fichier → Se connecter à un compte)."
+            )
+            self.connected = False
+            return False
+        if acc is not None and server and acc.server != server:
+            logger.warning(f"Serveur MT5 « {acc.server} » différent de config.yaml « {server} »")
         if not self.mt5.symbol_select(self.symbol, True):
             logger.error(f"Impossible de sélectionner {self.symbol} dans le Market Watch")
             self.connected = False

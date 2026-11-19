@@ -8,8 +8,11 @@
    (ou *Outils → Options → Graphiques → Nb max de barres* = illimité).
 
 ## 2. Configurer `config.yaml`
-- `mt5.server` : nom exact du serveur (visible dans *Fichier → Se connecter à un compte*).
-- `mt5.login: 0` utilise la session déjà ouverte dans le terminal (le plus simple).
+- `mt5.server` : déjà réglé sur **MetaQuotes-Demo**.
+- Numéro de compte : à saisir dans l'appli (**Configuration → Secrets → N° de compte MT5**) ou dans `.env`
+  (`MT5_LOGIN=...`). Il n'est pas dans `config.yaml` car le dépôt est public. Le bot refuse de trader si le
+  terminal est connecté à un autre compte.
+- Mot de passe : optionnel. Sans lui, le bot utilise la session déjà ouverte dans MT5 (le plus simple).
 - `account.initial_capital` : capital du backtest.
 - `strategy.name` : `trend_following`, `mean_reversion` ou `ml_xgboost`.
 - `filters.news_events_utc` : **mets à jour** les dates NFP / CPI / FOMC depuis un calendrier économique.
